@@ -1,0 +1,89 @@
+:root {
+  /* Color — "Hall of Sages": deep ink-indigo hall, gold leaf inscriptions,
+     muted teal for the living/present-day speaker (the user) */
+  --ink-950: #0F1220;
+  --ink-900: #161A2B;
+  --ink-800: #1E2338;
+  --ink-700: #2A3049;
+  --ink-600: #3A4160;
+
+  --gold-500: #C9A227;
+  --gold-400: #E1BE4F;
+  --gold-200: #F3E3B0;
+
+  --parchment: #EDE6D4;
+  --parchment-dim: #B9B2A0;
+
+  --teal-500: #3E6259;
+  --teal-400: #588478;
+
+  --danger: #C1594A;
+  --success: #4FAE8A;
+
+  /* Type */
+  --font-display: "Cormorant Garamond", Georgia, serif;
+  --font-eyebrow: "Cormorant SC", var(--font-display);
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+
+  --radius-lg: 20px;
+  --radius-md: 14px;
+  --radius-sm: 8px;
+
+  --glass-bg: rgba(30, 35, 56, 0.55);
+  --glass-border: rgba(233, 210, 138, 0.14);
+  --glow-gold: 0 0 32px -6px rgba(201, 162, 39, 0.55);
+  --glow-teal: 0 0 32px -6px rgba(88, 132, 120, 0.6);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(ellipse 900px 500px at 15% -10%, rgba(88, 132, 120, 0.16), transparent 60%),
+    radial-gradient(ellipse 900px 600px at 90% 10%, rgba(201, 162, 39, 0.12), transparent 55%),
+    radial-gradient(ellipse at 20% -10%, #232A46 0%, var(--ink-950) 55%);
+  color: var(--parchment);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--gold-500);
+  color: var(--ink-950);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--ink-600);
+  border-radius: 8px;
+}
+
+a {
+  color: var(--gold-400);
+}
+
+button {
+  font-family: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold-400);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
