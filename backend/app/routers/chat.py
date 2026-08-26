@@ -18,6 +18,7 @@ def send_message(payload: ChatRequest):
             session_id=payload.session_id,
             persona_prompt=character.persona_prompt,
             user_message=payload.message,
+            language=payload.language or "en",
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"LLM error: {exc}")

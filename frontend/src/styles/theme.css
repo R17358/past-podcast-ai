@@ -1,39 +1,55 @@
 :root {
-  /* Color — "Hall of Sages": deep ink-indigo hall, gold leaf inscriptions,
-     muted teal for the living/present-day speaker (the user) */
-  --ink-950: #0F1220;
-  --ink-900: #161A2B;
-  --ink-800: #1E2338;
-  --ink-700: #2A3049;
-  --ink-600: #3A4160;
+  /* "Hall of Sages" — modern dark theme: deep indigo/violet space with an
+     electric violet→blue accent gradient, and a warm amber accent reserved
+     for the user's own voice/messages. */
+  --bg-950: #08070F;
+  --bg-900: #0D0C18;
+  --bg-800: #14132420;
+  --surface-900: #12111F;
+  --surface-800: #191830;
+  --surface-700: #211F3B;
+  --surface-600: #2A2749;
 
-  --gold-500: #C9A227;
-  --gold-400: #E1BE4F;
-  --gold-200: #F3E3B0;
+  --border-soft: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
 
-  --parchment: #EDE6D4;
-  --parchment-dim: #B9B2A0;
+  --text-hi: #F4F2FF;
+  --text-mid: #B7B2D6;
+  --text-dim: #8580A6;
 
-  --teal-500: #3E6259;
-  --teal-400: #588478;
+  --violet-500: #7C5CFC;
+  --violet-400: #9B82FF;
+  --violet-300: #C2B2FF;
+  --blue-400: #4F8CFF;
 
-  --danger: #C1594A;
-  --success: #4FAE8A;
+  --amber-400: #F5B94D;
+  --amber-500: #E9A227;
 
-  /* Type */
-  --font-display: "Cormorant Garamond", Georgia, serif;
-  --font-eyebrow: "Cormorant SC", var(--font-display);
+  --danger: #FF6B6B;
+  --success: #4FD1A5;
+
+  --grad-brand: linear-gradient(135deg, var(--violet-500) 0%, var(--blue-400) 100%);
+  --grad-brand-soft: linear-gradient(135deg, rgba(124, 92, 252, 0.22) 0%, rgba(79, 140, 255, 0.16) 100%);
+
+  --font-display: "Sora", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
 
+  --radius-xl: 28px;
   --radius-lg: 20px;
   --radius-md: 14px;
-  --radius-sm: 8px;
+  --radius-sm: 10px;
+  --radius-pill: 999px;
 
-  --glass-bg: rgba(30, 35, 56, 0.55);
-  --glass-border: rgba(233, 210, 138, 0.14);
-  --glow-gold: 0 0 32px -6px rgba(201, 162, 39, 0.55);
-  --glow-teal: 0 0 32px -6px rgba(88, 132, 120, 0.6);
+  --glass-bg: rgba(25, 24, 48, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glow-violet: 0 0 40px -8px rgba(124, 92, 252, 0.55);
+  --glow-blue: 0 0 40px -8px rgba(79, 140, 255, 0.5);
+  --shadow-card: 0 10px 30px -12px rgba(0, 0, 0, 0.55);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Safe-area helpers for notched phones */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 * {
@@ -47,38 +63,57 @@ html, body, #root {
 body {
   margin: 0;
   background:
-    radial-gradient(ellipse 900px 500px at 15% -10%, rgba(88, 132, 120, 0.16), transparent 60%),
-    radial-gradient(ellipse 900px 600px at 90% 10%, rgba(201, 162, 39, 0.12), transparent 55%),
-    radial-gradient(ellipse at 20% -10%, #232A46 0%, var(--ink-950) 55%);
-  color: var(--parchment);
+    radial-gradient(ellipse 900px 500px at 12% -8%, rgba(124, 92, 252, 0.22), transparent 60%),
+    radial-gradient(ellipse 900px 600px at 92% 6%, rgba(79, 140, 255, 0.16), transparent 55%),
+    radial-gradient(ellipse at 20% 110%, rgba(233, 162, 39, 0.08), transparent 55%),
+    var(--bg-950);
+  color: var(--text-hi);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
+  overflow: hidden;
 }
 
 ::selection {
-  background: var(--gold-500);
-  color: var(--ink-950);
+  background: var(--violet-500);
+  color: var(--text-hi);
 }
 
 ::-webkit-scrollbar {
   width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--ink-600);
+  background: var(--surface-600);
   border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--violet-500);
 }
 
 a {
-  color: var(--gold-400);
+  color: var(--violet-300);
 }
 
-button {
+button, input, select, textarea {
   font-family: inherit;
 }
 
+button {
+  cursor: pointer;
+}
+
 :focus-visible {
-  outline: 2px solid var(--gold-400);
+  outline: 2px solid var(--violet-400);
   outline-offset: 2px;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+  margin: 0;
+}
+
+p {
+  margin: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {

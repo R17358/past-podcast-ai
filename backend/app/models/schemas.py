@@ -37,6 +37,7 @@ class ChatRequest(BaseModel):
     character_id: str
     session_id: str
     message: str
+    language: Optional[str] = "en"   # BCP-47-ish code: en, hi, mr, ...
 
 
 class ChatResponse(BaseModel):
@@ -48,3 +49,10 @@ class ChatResponse(BaseModel):
 class VoiceRequest(BaseModel):
     character_id: str
     text: str
+    language: Optional[str] = "en"
+
+
+class Language(BaseModel):
+    code: str
+    label: str
+    speech_locale: str   # locale tag for the browser's SpeechRecognition API

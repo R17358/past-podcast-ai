@@ -1,24 +1,27 @@
 import { useState } from "react";
 import { fetchVoice } from "../services/api.js";
 
-export default function MessageBubble({ role, content, character }) {
+export default function MessageBubble({ role, content, character, language = "en" }) {
   const [loadingAudio, setLoadingAudio] = useState(false);
   const [audioUrl, setAudioUrl] = useState(null);
+  const [error, setError] = useState("");
 
   const isUser = role === "user";
 
   async function handleListen() {
+    setError("");
     if (audioUrl) {
-      new Audio(audioUrl).play();
+      new Audio(audioUrl).play().catch(() => setError("Playback blocked by browser."));
       return;
     }
     setLoadingAudio(true);
     try {
-      const url = await fetchVoice({ characterId: character.id, text: content });
+      const url = await fetchVoice({ characterId: character.id, text: content, language });
       setAudioUrl(url);
-      new Audio(url).play();
+      await new Audio(url).play();
     } catch (err) {
       console.error("Voice generation failed", err);
+      setError("Voice unavailable right now.");
     } finally {
       setLoadingAudio(false);
     }
@@ -27,12 +30,15 @@ export default function MessageBubble({ role, content, character }) {
   return (
     <div className={`bubble-row ${isUser ? "user" : "character"}`}>
       {!isUser && <div className="bubble-mini-avatar">{character.avatar_emoji}</div>}
-      <div>
+      <div className="bubble-col">
         <div className="bubble">{content}</div>
         {!isUser && (
-          <button className="listen-btn" onClick={handleListen} disabled={loadingAudio}>
-            {loadingAudio ? "Conjuring voice…" : "🔊 Listen"}
-          </button>
+          <div className="bubble-meta">
+            <button className="listen-btn" onClick={handleListen} disabled={loadingAudio}>
+              {loadingAudio ? "Conjuring voice…" : "🔊 Listen"}
+            </button>
+            {error && <span className="bubble-error">{error}</span>}
+          </div>
         )}
       </div>
     </div>

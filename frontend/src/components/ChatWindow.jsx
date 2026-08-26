@@ -5,6 +5,15 @@ import { sendMessage, resetChat, fetchVoice } from "../services/api.js";
 const SpeechRecognitionAPI =
   typeof window !== "undefined" ? window.SpeechRecognition || window.webkitSpeechRecognition : null;
 
+// A ~50ms silent WAV. Played once, synchronously, inside a real click handler
+// so the browser treats the <audio> element as "unlocked" for autoplay —
+// every later programmatic .play() on that same element (loading a real TTS
+// mp3) is then allowed, even mid-conversation with no fresh click. This is
+// the actual fix for "voice mode doesn't say anything back": without it,
+// mobile Safari / some Chrome builds silently reject the later play().
+const SILENT_AUDIO_SRC =
+  "data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA";
+
 // Strips markdown / asterisk stage-directions so TTS doesn't try to speak symbols aloud
 function cleanForSpeech(text) {
   return text
@@ -14,7 +23,26 @@ function cleanForSpeech(text) {
     .trim();
 }
 
-export default function ChatWindow({ character, sessionId }) {
+// Last-resort fallback: if the ElevenLabs call fails (missing key, quota,
+// network), use the browser's own built-in voice so the character still
+// speaks instead of the app going silent.
+function speakWithBrowserVoice(text, speechLocale) {
+  return new Promise((resolve) => {
+    if (!("speechSynthesis" in window)) return resolve();
+    try {
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = speechLocale || "en-US";
+      utter.onend = resolve;
+      utter.onerror = resolve;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utter);
+    } catch {
+      resolve();
+    }
+  });
+}
+
+export default function ChatWindow({ character, sessionId, language = "en", speechLocale = "en-US" }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -28,7 +56,7 @@ export default function ChatWindow({ character, sessionId }) {
   const scrollRef = useRef(null);
   const callScrollRef = useRef(null);
   const recognitionRef = useRef(null);
-  const audioRef = useRef(null);
+  const audioRef = useRef(null); // persistent <audio> element, see SILENT_AUDIO_SRC comment
   const voiceModeRef = useRef(false);
 
   useEffect(() => {
@@ -74,7 +102,6 @@ export default function ChatWindow({ character, sessionId }) {
     recognitionRef.current = null;
     if (audioRef.current) {
       audioRef.current.pause();
-      audioRef.current = null;
     }
     setCallState("idle");
     setLiveCaption("");
@@ -89,7 +116,7 @@ export default function ChatWindow({ character, sessionId }) {
     }
 
     const recognition = new SpeechRecognitionAPI();
-    recognition.lang = "en-US";
+    recognition.lang = speechLocale;
     recognition.interimResults = true;
     recognition.continuous = false;
     let finalText = "";
@@ -131,7 +158,7 @@ export default function ChatWindow({ character, sessionId }) {
     setCallState("thinking");
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     try {
-      const data = await sendMessage({ characterId: character.id, sessionId, message: text });
+      const data = await sendMessage({ characterId: character.id, sessionId, message: text, language });
       setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
       await speak(data.reply);
     } catch {
@@ -145,17 +172,24 @@ export default function ChatWindow({ character, sessionId }) {
 
   async function speak(text) {
     setCallState("speaking");
+    setVoiceError("");
+    const clean = cleanForSpeech(text);
     try {
-      const url = await fetchVoice({ characterId: character.id, text: cleanForSpeech(text) });
-      await new Promise((resolve) => {
-        const audio = new Audio(url);
-        audioRef.current = audio;
+      const url = await fetchVoice({ characterId: character.id, text: clean, language });
+      await new Promise((resolve, reject) => {
+        const audio = audioRef.current;
+        if (!audio) return reject(new Error("no audio element"));
+        audio.src = url;
         audio.onended = resolve;
-        audio.onerror = resolve;
-        audio.play().catch(resolve);
+        audio.onerror = () => reject(new Error("audio element playback error"));
+        audio.play().then(() => {}).catch(reject);
       });
-    } catch {
-      /* voice failed — conversation still continues in text */
+    } catch (err) {
+      // ElevenLabs failed (missing/invalid API key, quota, network, or the
+      // browser blocked autoplay) — fall back to the browser's own voice
+      // instead of the character going silent.
+      setVoiceError("Couldn't reach the cloud voice — using your browser's built-in voice instead.");
+      await speakWithBrowserVoice(clean, speechLocale);
     }
   }
 
@@ -166,6 +200,13 @@ export default function ChatWindow({ character, sessionId }) {
     } else {
       setVoiceError("");
       setVoiceMode(true);
+      // Unlock autoplay for this <audio> element inside this real click —
+      // required so later programmatic play() calls (after each AI reply)
+      // aren't silently blocked by the browser.
+      if (audioRef.current) {
+        audioRef.current.src = SILENT_AUDIO_SRC;
+        audioRef.current.play().catch(() => {});
+      }
       startListening();
     }
   }
@@ -177,7 +218,7 @@ export default function ChatWindow({ character, sessionId }) {
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setIsTyping(true);
     try {
-      const data = await sendMessage({ characterId: character.id, sessionId, message: text });
+      const data = await sendMessage({ characterId: character.id, sessionId, message: text, language });
       setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
     } catch (err) {
       setMessages((prev) => [
@@ -203,9 +244,11 @@ export default function ChatWindow({ character, sessionId }) {
 
   return (
     <section className="chat-panel">
+      <audio ref={audioRef} preload="auto" />
+
       <header className="chat-header">
         <div className="medallion">{character.avatar_emoji}</div>
-        <div>
+        <div className="chat-header-info">
           <p className="chat-header-name">{character.name}</p>
           <p className="chat-header-title">{character.title}{character.era ? ` · ${character.era}` : ""}</p>
         </div>
@@ -236,7 +279,7 @@ export default function ChatWindow({ character, sessionId }) {
             <span className="call-orb-avatar">{character.avatar_emoji}</span>
           </div>
           <p className="call-status">{statusText}</p>
-          {liveCaption && <p className="call-caption">“{liveCaption}”</p>}
+          {liveCaption && <p className="call-caption">"{liveCaption}"</p>}
 
           <div className="call-transcript" ref={callScrollRef}>
             {messages.slice(-8).map((m, i) => (
@@ -260,7 +303,7 @@ export default function ChatWindow({ character, sessionId }) {
               </div>
             )}
             {messages.map((m, i) => (
-              <MessageBubble key={i} role={m.role} content={m.content} character={character} />
+              <MessageBubble key={i} role={m.role} content={m.content} character={character} language={language} />
             ))}
             {isTyping && (
               <div className="bubble-row character">
@@ -280,7 +323,7 @@ export default function ChatWindow({ character, sessionId }) {
               placeholder={`Ask ${character.name} something…`}
             />
             <button className="send-btn" onClick={handleSend} disabled={!input.trim() || isTyping}>
-              Send
+              ➤
             </button>
           </div>
         </>

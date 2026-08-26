@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import characters, chat, voice
+from app.routers import characters, chat, voice, languages
 
 app = FastAPI(
     title="Character AI — Talk to History",
@@ -21,6 +21,7 @@ app.add_middleware(
 app.include_router(characters.router)
 app.include_router(chat.router)
 app.include_router(voice.router)
+app.include_router(languages.router)
 
 
 @app.get("/")

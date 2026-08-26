@@ -9,16 +9,22 @@ export async function fetchCharacters() {
   return data;
 }
 
+export async function fetchLanguages() {
+  const { data } = await api.get("/api/languages");
+  return data;
+}
+
 export async function addCharacter(payload) {
   const { data } = await api.post("/api/characters", payload);
   return data;
 }
 
-export async function sendMessage({ characterId, sessionId, message }) {
+export async function sendMessage({ characterId, sessionId, message, language }) {
   const { data } = await api.post("/api/chat", {
     character_id: characterId,
     session_id: sessionId,
     message,
+    language: language || "en",
   });
   return data;
 }
@@ -29,10 +35,10 @@ export async function resetChat({ characterId, sessionId }) {
   });
 }
 
-export async function fetchVoice({ characterId, text }) {
+export async function fetchVoice({ characterId, text, language }) {
   const response = await api.post(
     "/api/voice",
-    { character_id: characterId, text },
+    { character_id: characterId, text, language: language || "en" },
     { responseType: "blob" }
   );
   return URL.createObjectURL(response.data);

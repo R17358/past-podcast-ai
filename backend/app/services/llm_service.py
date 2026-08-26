@@ -13,6 +13,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 from app.config import settings
 from app.models.schemas import ChatMessage
+from app.data.languages import get_language
 
 # session_id + character_id -> list of ChatMessage
 _HISTORIES: Dict[Tuple[str, str], List[ChatMessage]] = {}
@@ -50,12 +51,22 @@ def get_history(character_id: str, session_id: str) -> List[ChatMessage]:
 
 
 def chat_with_character(character_id: str, session_id: str,
-                         persona_prompt: str, user_message: str) -> Tuple[str, List[ChatMessage]]:
+                         persona_prompt: str, user_message: str,
+                         language: str = "en") -> Tuple[str, List[ChatMessage]]:
     key = _history_key(character_id, session_id)
     history = _HISTORIES.setdefault(key, [])
 
+    lang = get_language(language)
+    language_instruction = (
+        f"\nAlways reply in {lang.label} (language code '{lang.code}'), regardless of the "
+        "language the persona was originally written in. Keep the character's personality "
+        "and tone, just express it in that language, using natural, native-sounding phrasing."
+    )
+
     # Build the LangChain message list: system persona + prior turns + new turn
-    lc_messages = [SystemMessage(content=persona_prompt + "\n" + LIVE_CHARACTER_GUIDELINES)]
+    lc_messages = [SystemMessage(
+        content=persona_prompt + "\n" + LIVE_CHARACTER_GUIDELINES + language_instruction
+    )]
     for turn in history[-MAX_TURNS_KEPT:]:
         if turn.role == "user":
             lc_messages.append(HumanMessage(content=turn.content))

@@ -1,12 +1,24 @@
 import CharacterCard from "./CharacterCard.jsx";
+import LanguageSelector from "./LanguageSelector.jsx";
 
-export default function CharacterGallery({ characters, activeId, onSelect, onAddClick }) {
+export default function CharacterGallery({
+  characters,
+  activeId,
+  onSelect,
+  onAddClick,
+  language,
+  onLanguageChange,
+}) {
   return (
     <aside className="hall">
-      <p className="hall-eyebrow">Hall of Sages</p>
-      <h1 className="hall-title">
-        Talk to <em>History</em>
-      </h1>
+      <div className="hall-head">
+        <p className="hall-eyebrow">Hall of Sages</p>
+        <h1 className="hall-title">
+          Talk to <em>History</em>
+        </h1>
+        <LanguageSelector value={language} onChange={onLanguageChange} />
+      </div>
+
       <div className="character-grid">
         {characters.map((c) => (
           <CharacterCard
