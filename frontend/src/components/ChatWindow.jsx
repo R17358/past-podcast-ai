@@ -361,7 +361,7 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
           </div>
 
           <div className="call-actions">
-            <button className="ghost-btn" onClick={handleShowCamera} disabled={cameraBusy} title="Show something via camera">
+            <button className="ghost-btn" onClick={handleCameraOpen} disabled={cameraBusy} title="Show something via camera">
               {cameraBusy ? "📷…" : "📷 Show"}
             </button>
             <button className="hang-up-btn" onClick={toggleVoiceMode}>End call</button>
@@ -391,7 +391,7 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
           </div>
 
           <div className="composer">
-            <button className="ghost-btn camera-btn" onClick={handleShowCamera} disabled={cameraBusy} title="Show something via camera">
+            <button className="ghost-btn camera-btn" onClick={handleCameraOpen} disabled={cameraBusy} title="Show something via camera">
               {cameraBusy ? "📷…" : "📷"}
             </button>
             <input
