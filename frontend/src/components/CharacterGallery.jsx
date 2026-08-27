@@ -8,6 +8,9 @@ export default function CharacterGallery({
   onAddClick,
   language,
   onLanguageChange,
+  user,
+  onAuthClick,
+  onLogout,
 }) {
   return (
     <aside className="hall">
@@ -17,6 +20,16 @@ export default function CharacterGallery({
           Talk to <em>History</em>
         </h1>
         <LanguageSelector value={language} onChange={onLanguageChange} />
+        <div className="account-row">
+          {user ? (
+            <>
+              <span className="account-name">👤 {user.name}</span>
+              <button className="ghost-btn" onClick={onLogout}>Log out</button>
+            </>
+          ) : (
+            <button className="ghost-btn" onClick={onAuthClick}>Log in / Sign up</button>
+          )}
+        </div>
       </div>
 
       <div className="character-grid">

@@ -2,17 +2,22 @@ import { useEffect, useState } from "react";
 import CharacterGallery from "./components/CharacterGallery.jsx";
 import ChatWindow from "./components/ChatWindow.jsx";
 import AddCharacterModal from "./components/AddCharacterModal.jsx";
+import AuthModal from "./components/AuthModal.jsx";
 import LanguageSelector, { FALLBACK_LANGUAGES } from "./components/LanguageSelector.jsx";
-import { fetchCharacters } from "./services/api.js";
+import { fetchCharacters, fetchMe, getToken, logout } from "./services/api.js";
 import "./styles/App.css";
 
-// One id per browser tab/session — keeps each visitor's conversation memory separate
+// One id per browser tab/session — keeps each guest visitor's conversation
+// memory separate. Logged-in users' memory follows their account instead
+// (see backend/app/services/memory_service.py), this id just becomes unused for them.
 const SESSION_ID = crypto.randomUUID();
 
 export default function App() {
   const [characters, setCharacters] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [user, setUser] = useState(null);
   const [loadError, setLoadError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [language, setLanguage] = useState(
@@ -30,6 +35,13 @@ export default function App() {
         if (data.length) setActiveId(data[0].id);
       })
       .catch(() => setLoadError("Could not reach the backend. Is it running on the configured URL?"));
+
+    // Restore a logged-in session on refresh, if a token is already saved.
+    if (getToken()) {
+      fetchMe()
+        .then(setUser)
+        .catch(() => logout()); // stale/expired token — fall back to guest silently
+    }
   }, []);
 
   const activeCharacter = characters.find((c) => c.id === activeId) || null;
@@ -45,6 +57,16 @@ export default function App() {
   function handleSelect(c) {
     setActiveId(c.id);
     setSidebarOpen(false);
+  }
+
+  function handleAuthed(loggedInUser) {
+    setUser(loggedInUser);
+    setShowAuthModal(false);
+  }
+
+  function handleLogout() {
+    logout();
+    setUser(null);
   }
 
   return (
@@ -77,6 +99,9 @@ export default function App() {
         }}
         language={language}
         onLanguageChange={setLanguage}
+        user={user}
+        onAuthClick={() => setShowAuthModal(true)}
+        onLogout={handleLogout}
       />
 
       {loadError ? (
@@ -100,6 +125,10 @@ export default function App() {
 
       {showAddModal && (
         <AddCharacterModal onClose={() => setShowAddModal(false)} onCreated={handleCreated} />
+      )}
+
+      {showAuthModal && (
+        <AuthModal onClose={() => setShowAuthModal(false)} onAuthed={handleAuthed} />
       )}
     </div>
   );

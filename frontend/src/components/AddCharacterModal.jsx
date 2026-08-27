@@ -6,6 +6,7 @@ export default function AddCharacterModal({ onClose, onCreated }) {
   const [description, setDescription] = useState("");
   const [era, setEra] = useState("");
   const [emoji, setEmoji] = useState("🧑\u200d🎓");
+  const [voiceId, setVoiceId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -20,6 +21,7 @@ export default function AddCharacterModal({ onClose, onCreated }) {
         description: description.trim(),
         era: era.trim(),
         avatar_emoji: emoji || "🧑\u200d🎓",
+        voice_id: voiceId.trim() || null,
       });
       onCreated(created);
     } catch (err) {
@@ -57,6 +59,19 @@ export default function AddCharacterModal({ onClose, onCreated }) {
           <div className="field">
             <label>Avatar emoji (optional)</label>
             <input value={emoji} onChange={(e) => setEmoji(e.target.value)} placeholder="🧪" />
+          </div>
+          <div className="field">
+            <label>ElevenLabs voice ID (optional)</label>
+            <input
+              value={voiceId}
+              onChange={(e) => setVoiceId(e.target.value)}
+              placeholder="Leave blank to use the default voice"
+            />
+            <p className="hint">
+              Give each character their own voice from your ElevenLabs account (must be a voice
+              in "My Voices", not the shared Voice Library, on the free plan). Copy the ID from
+              the voice's page in ElevenLabs.
+            </p>
           </div>
           {error && <p className="error-text">{error}</p>}
           <div className="modal-actions">

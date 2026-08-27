@@ -1,12 +1,15 @@
 """
-All LLM logic (chatting in-character + auto-writing personas for new
-characters) lives here, built on LangChain's Gemini integration.
+All LLM logic (chatting in-character, auto-writing personas, rolling-summary
+memory, and vision replies for the on-demand camera feature) lives here,
+built on LangChain's Gemini integration.
 
-We keep one lightweight in-memory conversation history per
-(character_id, session_id) pair. That's enough for a single-server demo;
-swap `_HISTORIES` for Redis/DB storage if you ever need multi-instance scaling.
+Conversation state itself (raw messages + summary) is no longer kept here —
+it's persisted in MongoDB via services/memory_service.py, so it survives
+restarts and can follow a logged-in user across devices. This module is
+purely "given some context, produce the next reply."
 """
-from typing import Dict, List, Tuple
+import base64
+from typing import List
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
@@ -14,11 +17,6 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from app.config import settings
 from app.models.schemas import ChatMessage
 from app.data.languages import get_language
-
-# session_id + character_id -> list of ChatMessage
-_HISTORIES: Dict[Tuple[str, str], List[ChatMessage]] = {}
-
-MAX_TURNS_KEPT = 12  # trim history so prompts don't grow forever
 
 # Appended to every character's persona_prompt so the whole cast behaves like
 # a "live" person rather than a generic assistant, and so replies are safe to
@@ -42,32 +40,26 @@ def _get_llm(temperature: float = 0.7) -> ChatGoogleGenerativeAI:
     )
 
 
-def _history_key(character_id: str, session_id: str) -> Tuple[str, str]:
-    return (character_id, session_id)
-
-
-def get_history(character_id: str, session_id: str) -> List[ChatMessage]:
-    return _HISTORIES.get(_history_key(character_id, session_id), [])
-
-
-def chat_with_character(character_id: str, session_id: str,
-                         persona_prompt: str, user_message: str,
-                         language: str = "en") -> Tuple[str, List[ChatMessage]]:
-    key = _history_key(character_id, session_id)
-    history = _HISTORIES.setdefault(key, [])
-
+def _language_instruction(language: str) -> str:
     lang = get_language(language)
-    language_instruction = (
+    return (
         f"\nAlways reply in {lang.label} (language code '{lang.code}'), regardless of the "
         "language the persona was originally written in. Keep the character's personality "
         "and tone, just express it in that language, using natural, native-sounding phrasing."
     )
 
-    # Build the LangChain message list: system persona + prior turns + new turn
-    lc_messages = [SystemMessage(
-        content=persona_prompt + "\n" + LIVE_CHARACTER_GUIDELINES + language_instruction
-    )]
-    for turn in history[-MAX_TURNS_KEPT:]:
+
+def chat_with_character(persona_prompt: str, summary: str, history: List[ChatMessage],
+                         user_message: str, language: str = "en") -> str:
+    system_content = persona_prompt + "\n" + LIVE_CHARACTER_GUIDELINES + _language_instruction(language)
+    if summary:
+        system_content += (
+            "\n\nHere is a summary of the earlier part of this same conversation "
+            f"(for continuity — don't repeat it back verbatim): {summary}"
+        )
+
+    lc_messages = [SystemMessage(content=system_content)]
+    for turn in history:
         if turn.role == "user":
             lc_messages.append(HumanMessage(content=turn.content))
         else:
@@ -76,17 +68,29 @@ def chat_with_character(character_id: str, session_id: str,
 
     llm = _get_llm()
     response = llm.invoke(lc_messages)
-    reply_text = response.content
-
-    history.append(ChatMessage(role="user", content=user_message))
-    history.append(ChatMessage(role="assistant", content=reply_text))
-    _HISTORIES[key] = history
-
-    return reply_text, history
+    return response.content
 
 
-def reset_history(character_id: str, session_id: str) -> None:
-    _HISTORIES.pop(_history_key(character_id, session_id), None)
+def summarize_messages(persona_name: str, previous_summary: str, messages_to_fold: List[ChatMessage]) -> str:
+    """
+    Cost-control step: instead of sending the whole growing conversation to
+    the LLM forever, older turns get condensed into one short rolling
+    summary. Called only occasionally (see memory_service.save_turn), not on
+    every message.
+    """
+    transcript = "\n".join(f"{m.role}: {m.content}" for m in messages_to_fold)
+    instruction = (
+        f"You are maintaining a short rolling memory summary of a conversation "
+        f"between a user and {persona_name}. "
+        f"Existing summary so far: {previous_summary or '(none yet)'}\n\n"
+        f"New messages to fold in:\n{transcript}\n\n"
+        "Write an updated summary in 4-6 sentences, covering the important facts, "
+        "names, and context the user shared, plus anything the character promised or "
+        "committed to. Be concise. Return ONLY the updated summary, nothing else."
+    )
+    llm = _get_llm(temperature=0.2)
+    response = llm.invoke([HumanMessage(content=instruction)])
+    return response.content.strip()
 
 
 def generate_persona_prompt(name: str, description: str) -> str:
@@ -108,3 +112,29 @@ def generate_persona_prompt(name: str, description: str) -> str:
     )
     response = llm.invoke([HumanMessage(content=instruction)])
     return response.content.strip()
+
+
+def ask_with_image(persona_prompt: str, image_base64: str, question: str, language: str = "en") -> str:
+    """
+    On-demand vision reply (the camera "Show" feature) — NOT continuous
+    observation. Called once per button press, with a single captured frame.
+    """
+    if "," in image_base64 and image_base64.strip().startswith("data:"):
+        image_base64 = image_base64.split(",", 1)[1]  # strip any "data:image/...;base64," prefix
+    try:
+        base64.b64decode(image_base64, validate=True)
+    except Exception as exc:
+        raise ValueError(f"Invalid image data: {exc}")
+
+    system_content = (
+        persona_prompt + "\n" + LIVE_CHARACTER_GUIDELINES + _language_instruction(language)
+        + "\nThe user has just shown you something through their camera. React to it in character, "
+        "as if you were really looking at it right now."
+    )
+    message = HumanMessage(content=[
+        {"type": "text", "text": question or "What do you see in this image?"},
+        {"type": "image_url", "image_url": f"data:image/jpeg;base64,{image_base64}"},
+    ])
+    llm = _get_llm()
+    response = llm.invoke([SystemMessage(content=system_content), message])
+    return response.content

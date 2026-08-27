@@ -56,3 +56,43 @@ class Language(BaseModel):
     code: str
     label: str
     speech_locale: str   # locale tag for the browser's SpeechRecognition API
+
+
+# --- Auth ---
+
+class SignupRequest(BaseModel):
+    name: str = Field(..., min_length=1)
+    email: str = Field(..., min_length=3)
+    password: str = Field(..., min_length=6)
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class UserOut(BaseModel):
+    id: str
+    name: str
+    email: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserOut
+
+
+# --- Vision (on-demand camera input, e.g. "look at this, Sherlock") ---
+
+class VisionRequest(BaseModel):
+    character_id: str
+    session_id: str
+    image_base64: str          # data URL or raw base64 (no "data:image/..." prefix required)
+    question: Optional[str] = "What do you see in this image?"
+    language: Optional[str] = "en"
+
+
+class VisionResponse(BaseModel):
+    character_id: str
+    reply: str

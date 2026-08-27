@@ -1,0 +1,67 @@
+"""
+Auth is intentionally optional everywhere it touches chat/voice/vision:
+a logged-in user gets their conversation memory tied to their account
+(persists across devices), a guest gets memory tied to their browser
+session_id only (works immediately, no signup wall, matches how the app
+behaved before auth existed). Only a couple of endpoints (signup/login/me)
+require a real, verified user.
+"""
+import datetime
+from typing import Optional
+
+import jwt
+from fastapi import Depends, HTTPException, Header
+from passlib.context import CryptContext
+
+from app.config import settings
+from app.db import users_collection
+
+_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def hash_password(password: str) -> str:
+    return _pwd_context.hash(password)
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    return _pwd_context.verify(password, password_hash)
+
+
+def create_access_token(user_id: str) -> str:
+    if not settings.JWT_SECRET_KEY:
+        raise RuntimeError(
+            "JWT_SECRET_KEY is missing on the server (.env) — set it to any long "
+            "random string before auth can issue tokens."
+        )
+    expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
+    payload = {"sub": user_id, "exp": expire}
+    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+
+def _decode_token(token: str) -> Optional[str]:
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        return payload.get("sub")
+    except jwt.PyJWTError:
+        return None
+
+
+def get_optional_user_id(authorization: Optional[str] = Header(None)) -> Optional[str]:
+    """Returns the user's Mongo _id (as a string) if a valid Bearer token was
+    sent, otherwise None — never raises, so guest requests still work."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization.removeprefix("Bearer ").strip()
+    return _decode_token(token)
+
+
+def get_current_user(user_id: Optional[str] = Depends(get_optional_user_id)) -> dict:
+    """Use as a dependency on routes that REQUIRE a logged-in user (e.g. /me)."""
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    from bson import ObjectId  # local import: only auth routes need bson directly
+
+    user = users_collection.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user

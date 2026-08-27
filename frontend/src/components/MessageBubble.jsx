@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fetchVoice } from "../services/api.js";
+import { fetchVoice, playVoice } from "../services/api.js";
 
 export default function MessageBubble({ role, content, character, language = "en" }) {
   const [loadingAudio, setLoadingAudio] = useState(false);
@@ -11,14 +11,14 @@ export default function MessageBubble({ role, content, character, language = "en
   async function handleListen() {
     setError("");
     if (audioUrl) {
-      new Audio(audioUrl).play().catch(() => setError("Playback blocked by browser."));
+      playVoice(audioUrl).catch(() => setError("Playback blocked by browser."));
       return;
     }
     setLoadingAudio(true);
     try {
       const url = await fetchVoice({ characterId: character.id, text: content, language });
       setAudioUrl(url);
-      await new Audio(url).play();
+      await playVoice(url);
     } catch (err) {
       console.error("Voice generation failed", err);
       setError("Voice unavailable right now.");

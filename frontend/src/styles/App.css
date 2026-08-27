@@ -51,6 +51,21 @@
   color: var(--text-hi);
 }
 
+.account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.account-name {
+  font-size: 13px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .hall-title em {
   font-style: normal;
   background: var(--grad-brand);
@@ -656,6 +671,17 @@
 
 .call-line.user .call-line-speaker {
   color: var(--amber-400);
+}
+
+.call-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.camera-btn {
+  padding: 12px 14px;
+  font-size: 16px;
 }
 
 .hang-up-btn {

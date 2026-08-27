@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import MessageBubble from "./MessageBubble.jsx";
-import { sendMessage, resetChat, fetchVoice } from "../services/api.js";
+import { sendMessage, resetChat, fetchVoice, fetchVision, stopCurrentVoice, playVoice } from "../services/api.js";
 
 const SpeechRecognitionAPI =
   typeof window !== "undefined" ? window.SpeechRecognition || window.webkitSpeechRecognition : null;
@@ -12,7 +12,7 @@ const SpeechRecognitionAPI =
 // the actual fix for "voice mode doesn't say anything back": without it,
 // mobile Safari / some Chrome builds silently reject the later play().
 const SILENT_AUDIO_SRC =
-  "data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA";
+  "data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA";
 
 // Strips markdown / asterisk stage-directions so TTS doesn't try to speak symbols aloud
 function cleanForSpeech(text) {
@@ -52,16 +52,22 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
   const [callState, setCallState] = useState("idle"); // idle | listening | thinking | speaking
   const [liveCaption, setLiveCaption] = useState("");
   const [voiceError, setVoiceError] = useState("");
+  const [cameraBusy, setCameraBusy] = useState(false);
 
   const scrollRef = useRef(null);
   const callScrollRef = useRef(null);
   const recognitionRef = useRef(null);
   const audioRef = useRef(null); // persistent <audio> element, see SILENT_AUDIO_SRC comment
   const voiceModeRef = useRef(false);
+  const callStateRef = useRef("idle");
 
   useEffect(() => {
     voiceModeRef.current = voiceMode;
   }, [voiceMode]);
+
+  useEffect(() => {
+    callStateRef.current = callState;
+  }, [callState]);
 
   // Reset conversation + stop any live call whenever the chosen character changes
   useEffect(() => {
@@ -100,6 +106,7 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
       /* no-op */
     }
     recognitionRef.current = null;
+    stopCurrentVoice();
     if (audioRef.current) {
       audioRef.current.pause();
     }
@@ -121,7 +128,12 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
     recognition.continuous = false;
     let finalText = "";
 
-    recognition.onstart = () => setCallState("listening");
+    recognition.onstart = () => {
+      // Don't overwrite the "speaking" UI state just because the mic re-opened
+      // in the background for barge-in detection — only flip to "listening"
+      // once the user actually starts producing speech.
+      if (callStateRef.current !== "speaking") setCallState("listening");
+    };
     recognition.onresult = (event) => {
       let interim = "";
       finalText = "";
@@ -131,6 +143,17 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
         else interim += transcript;
       }
       setLiveCaption(interim || finalText);
+      // The user has started actually talking — if the AI is mid-reply, this
+      // IS the interrupt: cut it off immediately rather than waiting for
+      // recognition.onend, so the barge-in feels instant.
+      if ((interim || finalText) && callStateRef.current === "speaking") {
+        stopCurrentVoice();
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
+        }
+        setCallState("listening");
+      }
     };
     recognition.onerror = (event) => {
       if (event.error !== "no-speech" && event.error !== "aborted") {
@@ -154,19 +177,30 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
   }
 
   async function handleVoiceTurn(text) {
+    // If the user spoke while the AI was still talking, the interrupt already
+    // happened in onresult above — this just makes sure everything's fully
+    // stopped before the new turn starts.
+    stopCurrentVoice();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+
     setLiveCaption("");
     setCallState("thinking");
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     try {
       const data = await sendMessage({ characterId: character.id, sessionId, message: text, language });
       setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
-      await speak(data.reply);
+      speak(data.reply); // fire-and-forget — mic re-opens right below, WHILE this plays
     } catch {
       setMessages((prev) => [
         ...prev,
         { role: "assistant", content: "(The connection to this era was lost. Please try again.)" },
       ]);
     }
+    // Re-open the mic immediately instead of waiting for speak() to finish —
+    // this is what makes barge-in possible: recognition is live during "speaking".
     if (voiceModeRef.current) startListening();
   }
 
@@ -176,20 +210,22 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
     const clean = cleanForSpeech(text);
     try {
       const url = await fetchVoice({ characterId: character.id, text: clean, language });
+      const audio = audioRef.current;
+      if (!audio) throw new Error("no audio element");
       await new Promise((resolve, reject) => {
-        const audio = audioRef.current;
-        if (!audio) return reject(new Error("no audio element"));
-        audio.src = url;
         audio.onended = resolve;
         audio.onerror = () => reject(new Error("audio element playback error"));
-        audio.play().then(() => {}).catch(reject);
+        playVoice(url, audio).catch(reject);
       });
     } catch (err) {
-      // ElevenLabs failed (missing/invalid API key, quota, network, or the
-      // browser blocked autoplay) — fall back to the browser's own voice
-      // instead of the character going silent.
-      setVoiceError("Couldn't reach the cloud voice — using your browser's built-in voice instead.");
-      await speakWithBrowserVoice(clean, speechLocale);
+      // ElevenLabs failed, OR the user interrupted (we pause() the audio on
+      // barge-in, which also rejects/ends this promise) — either way, don't
+      // fall back to browser TTS if we're not still in "speaking" state,
+      // since that would mean the user already cut in and moved on.
+      if (callStateRef.current === "speaking") {
+        setVoiceError("Couldn't reach the cloud voice — using your browser's built-in voice instead.");
+        await speakWithBrowserVoice(clean, speechLocale);
+      }
     }
   }
 
@@ -227,6 +263,39 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
       ]);
     } finally {
       setIsTyping(false);
+    }
+  }
+
+  // On-demand camera "Show" feature: opens the camera, grabs exactly ONE
+  // frame, turns the camera off immediately, then sends just that frame.
+  // The camera is never left running / never continuously observing.
+  async function handleShowCamera() {
+    setVoiceError("");
+    setCameraBusy(true);
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      await video.play();
+      await new Promise((r) => setTimeout(r, 400)); // let exposure/focus settle
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext("2d").drawImage(video, 0, 0);
+      const imageBase64 = canvas.toDataURL("image/jpeg", 0.85);
+
+      setMessages((prev) => [...prev, { role: "user", content: "📷 (showed something on camera)" }]);
+      setIsTyping(true);
+      const data = await fetchVision({ characterId: character.id, sessionId, imageBase64, language });
+      setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
+      if (voiceModeRef.current) speak(data.reply);
+    } catch (err) {
+      setVoiceError("Couldn't use the camera — check browser/site permissions and try again.");
+    } finally {
+      stream?.getTracks().forEach((t) => t.stop()); // camera light off immediately
+      setIsTyping(false);
+      setCameraBusy(false);
     }
   }
 
@@ -290,7 +359,12 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
             ))}
           </div>
 
-          <button className="hang-up-btn" onClick={toggleVoiceMode}>End call</button>
+          <div className="call-actions">
+            <button className="ghost-btn" onClick={handleShowCamera} disabled={cameraBusy} title="Show something via camera">
+              {cameraBusy ? "📷…" : "📷 Show"}
+            </button>
+            <button className="hang-up-btn" onClick={toggleVoiceMode}>End call</button>
+          </div>
         </div>
       ) : (
         <>
@@ -316,6 +390,9 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
           </div>
 
           <div className="composer">
+            <button className="ghost-btn camera-btn" onClick={handleShowCamera} disabled={cameraBusy} title="Show something via camera">
+              {cameraBusy ? "📷…" : "📷"}
+            </button>
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
