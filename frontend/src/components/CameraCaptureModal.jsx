@@ -7,6 +7,8 @@ export default function CameraCaptureModal({ onCapture, onClose }) {
   const [facingMode, setFacingMode] = useState("environment"); // back camera by default
   const [torchOn, setTorchOn] = useState(false);
   const [torchSupported, setTorchSupported] = useState(false);
+  const [capturedImage, setCapturedImage] = useState(null);
+const [question, setQuestion] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -58,17 +60,26 @@ export default function CameraCaptureModal({ onCapture, onClose }) {
     setFacingMode((m) => (m === "environment" ? "user" : "environment"));
   }
 
-  function handleCapture() {
-    const video = videoRef.current;
-    if (!video || !video.videoWidth) return;
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext("2d").drawImage(video, 0, 0);
-    const imageBase64 = canvas.toDataURL("image/jpeg", 0.85);
-    stopStream();
-    onCapture(imageBase64);
-  }
+ function handleCapture() {
+  const video = videoRef.current;
+  if (!video || !video.videoWidth) return;
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video, 0, 0);
+  setCapturedImage(canvas.toDataURL("image/jpeg", 0.85));
+  stopStream(); // camera off as soon as the frame is captured — no need to keep it running during review
+}
+
+function handleRetake() {
+  setCapturedImage(null);
+  setQuestion("");
+  startStream(facingMode); // camera back on for another shot
+}
+
+function handleSend() {
+  onCapture(capturedImage, question.trim() || undefined); // undefined -> backend's default question
+}
 
   function handleClose() {
     stopStream();
@@ -76,13 +87,31 @@ export default function CameraCaptureModal({ onCapture, onClose }) {
   }
 
   return (
-    <div className="camera-modal-backdrop" onClick={handleClose}>
-      <div className="camera-modal" onClick={(e) => e.stopPropagation()}>
-        {error ? (
-          <p className="error-text">{error}</p>
-        ) : (
-          <video ref={videoRef} className="camera-preview" muted playsInline />
-        )}
+  <div className="camera-modal-backdrop" onClick={handleClose}>
+    <div className="camera-modal" onClick={(e) => e.stopPropagation()}>
+      {error ? (
+        <p className="error-text">{error}</p>
+      ) : capturedImage ? (
+        <>
+          <img src={capturedImage} alt="Captured" className="camera-preview" />
+          <div className="camera-review-panel">
+            <input
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder={`Ask something about this, or leave blank…`}
+              autoFocus
+            />
+            <div className="camera-review-actions">
+              <button className="ghost-btn" onClick={handleRetake}>Retake</button>
+              <button className="send-btn" onClick={handleSend}>Send ➤</button>
+            </div>
+          </div>
+        </>
+      ) : (
+        <video ref={videoRef} className="camera-preview" muted playsInline />
+      )}
+
+      {!capturedImage && (
         <div className="camera-controls">
           <button className="camera-icon-btn" onClick={switchCamera} title="Switch camera">🔄</button>
           <button className="camera-capture-btn" onClick={handleCapture} disabled={!!error} title="Capture">
@@ -98,8 +127,9 @@ export default function CameraCaptureModal({ onCapture, onClose }) {
             {torchOn ? "⚡" : "🔦"}
           </button>
         </div>
-        <button className="camera-close-btn" onClick={handleClose}>✕</button>
-      </div>
+      )}
+      <button className="camera-close-btn" onClick={handleClose}>✕</button>
     </div>
-  );
+  </div>
+);
 }

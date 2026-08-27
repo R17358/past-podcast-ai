@@ -1011,3 +1011,31 @@
   border: none;
   font-size: 16px;
 }
+
+.camera-review-panel {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 16px;
+  background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.camera-review-panel input {
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: white;
+  border-radius: var(--radius-pill);
+  padding: 12px 16px;
+  font-size: 14px;
+  outline: none;
+}
+
+.camera-review-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}

@@ -280,25 +280,25 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
     setShowCameraModal(true);
   }
 
-  async function handleCameraCapture(imageBase64) {
-    setShowCameraModal(false);
-    setCameraBusy(true);
-    try {
-      setMessages((prev) => [
-        ...prev,
-        { role: "user", content: "Here's what I'm showing you.", image: imageBase64 },
-      ]);
-      setIsTyping(true);
-      const data = await fetchVision({ characterId: character.id, sessionId, imageBase64, language });
-      setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
-      if (voiceModeRef.current) speak(data.reply);
-    } catch (err) {
-      setVoiceError("Couldn't process that image — please try again.");
-    } finally {
-      setIsTyping(false);
-      setCameraBusy(false);
-    }
+  async function handleCameraCapture(imageBase64, question) {
+  setShowCameraModal(false);
+  setCameraBusy(true);
+  try {
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: question || "Here's what I'm showing you.", image: imageBase64 },
+    ]);
+    setIsTyping(true);
+    const data = await fetchVision({ characterId: character.id, sessionId, imageBase64, question, language });
+    setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
+    if (voiceModeRef.current) speak(data.reply);
+  } catch (err) {
+    setVoiceError("Couldn't process that image — please try again.");
+  } finally {
+    setIsTyping(false);
+    setCameraBusy(false);
   }
+}
 
   async function handleClear() {
     await resetChat({ characterId: character.id, sessionId });
