@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { fetchVoice, playVoice } from "../services/api.js";
 
-export default function MessageBubble({ role, content, character, language = "en" }) {
+export default function MessageBubble({ role, content, image, character, language = "en" }) {
   const [loadingAudio, setLoadingAudio] = useState(false);
   const [audioUrl, setAudioUrl] = useState(null);
   const [error, setError] = useState("");
@@ -31,7 +31,10 @@ export default function MessageBubble({ role, content, character, language = "en
     <div className={`bubble-row ${isUser ? "user" : "character"}`}>
       {!isUser && <div className="bubble-mini-avatar">{character.avatar_emoji}</div>}
       <div className="bubble-col">
-        <div className="bubble">{content}</div>
+        <div className="bubble">
+          {image && <img src={image} alt="Shown to character" className="shared-image-preview" />}
+          <p>{content}</p>
+        </div>
         {!isUser && (
           <div className="bubble-meta">
             <button className="listen-btn" onClick={handleListen} disabled={loadingAudio}>

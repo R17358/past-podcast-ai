@@ -60,6 +60,7 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
   const audioRef = useRef(null); // persistent <audio> element, see SILENT_AUDIO_SRC comment
   const voiceModeRef = useRef(false);
   const callStateRef = useRef("idle");
+  const speakStartedAtRef = useRef(0);
 
   useEffect(() => {
     voiceModeRef.current = voiceMode;
@@ -146,7 +147,9 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
       // The user has started actually talking — if the AI is mid-reply, this
       // IS the interrupt: cut it off immediately rather than waiting for
       // recognition.onend, so the barge-in feels instant.
-      if ((interim || finalText) && callStateRef.current === "speaking") {
+      const spokenText = (interim || finalText).trim();
+      const speakingLongEnough = Date.now() - speakStartedAtRef.current > 800;
+      if (spokenText.length >= 4 && speakingLongEnough && callStateRef.current === "speaking") {
         stopCurrentVoice();
         if (audioRef.current) {
           audioRef.current.pause();
@@ -206,6 +209,7 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
 
   async function speak(text) {
     setCallState("speaking");
+    speakStartedAtRef.current = Date.now();
     setVoiceError("");
     const clean = cleanForSpeech(text);
     try {
@@ -241,7 +245,7 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
       // aren't silently blocked by the browser.
       if (audioRef.current) {
         audioRef.current.src = SILENT_AUDIO_SRC;
-        audioRef.current.play().catch(() => {});
+        audioRef.current.play().catch(() => { });
       }
       startListening();
     }
@@ -285,7 +289,10 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
       canvas.getContext("2d").drawImage(video, 0, 0);
       const imageBase64 = canvas.toDataURL("image/jpeg", 0.85);
 
-      setMessages((prev) => [...prev, { role: "user", content: "📷 (showed something on camera)" }]);
+      setMessages((prev) => [
+        ...prev,
+        { role: "user", content: "Here's what I'm showing you.", image: imageBase64 },
+      ]);
       setIsTyping(true);
       const data = await fetchVision({ characterId: character.id, sessionId, imageBase64, language });
       setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
@@ -377,7 +384,7 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
               </div>
             )}
             {messages.map((m, i) => (
-              <MessageBubble key={i} role={m.role} content={m.content} character={character} language={language} />
+              <MessageBubble key={i} role={m.role} content={m.content} image={m.image} character={character} language={language} />
             ))}
             {isTyping && (
               <div className="bubble-row character">
