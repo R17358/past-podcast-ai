@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import MessageBubble from "./MessageBubble.jsx";
 import { sendMessage, resetChat, fetchVoice, fetchVision, stopCurrentVoice, playVoice } from "../services/api.js";
+import CameraCaptureModal from "./CameraCaptureModal.jsx";
 
 const SpeechRecognitionAPI =
   typeof window !== "undefined" ? window.SpeechRecognition || window.webkitSpeechRecognition : null;
@@ -53,6 +54,7 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
   const [liveCaption, setLiveCaption] = useState("");
   const [voiceError, setVoiceError] = useState("");
   const [cameraBusy, setCameraBusy] = useState(false);
+  const [showCameraModal, setShowCameraModal] = useState(false);
 
   const scrollRef = useRef(null);
   const callScrollRef = useRef(null);
@@ -273,22 +275,15 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
   // On-demand camera "Show" feature: opens the camera, grabs exactly ONE
   // frame, turns the camera off immediately, then sends just that frame.
   // The camera is never left running / never continuously observing.
-  async function handleShowCamera() {
+  function handleCameraOpen() {
     setVoiceError("");
-    setCameraBusy(true);
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      const video = document.createElement("video");
-      video.srcObject = stream;
-      await video.play();
-      await new Promise((r) => setTimeout(r, 400)); // let exposure/focus settle
-      const canvas = document.createElement("canvas");
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      canvas.getContext("2d").drawImage(video, 0, 0);
-      const imageBase64 = canvas.toDataURL("image/jpeg", 0.85);
+    setShowCameraModal(true);
+  }
 
+  async function handleCameraCapture(imageBase64) {
+    setShowCameraModal(false);
+    setCameraBusy(true);
+    try {
       setMessages((prev) => [
         ...prev,
         { role: "user", content: "Here's what I'm showing you.", image: imageBase64 },
@@ -298,9 +293,8 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
       setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
       if (voiceModeRef.current) speak(data.reply);
     } catch (err) {
-      setVoiceError("Couldn't use the camera — check browser/site permissions and try again.");
+      setVoiceError("Couldn't process that image — please try again.");
     } finally {
-      stream?.getTracks().forEach((t) => t.stop()); // camera light off immediately
       setIsTyping(false);
       setCameraBusy(false);
     }
@@ -412,6 +406,9 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
           </div>
         </>
       )}
+      {showCameraModal && (
+  <CameraCaptureModal onCapture={handleCameraCapture} onClose={() => setShowCameraModal(false)} />
+)}
     </section>
   );
 }
