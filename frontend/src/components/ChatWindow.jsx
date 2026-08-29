@@ -6,6 +6,12 @@ import CameraCaptureModal from "./CameraCaptureModal.jsx";
 const SpeechRecognitionAPI =
   typeof window !== "undefined" ? window.SpeechRecognition || window.webkitSpeechRecognition : null;
 
+// How long to wait, after the user stops producing new speech, before we
+// treat it as "they're done talking" and submit the turn. This is OUR OWN
+// timer (not the browser's built-in end-of-speech guess), so it's the one
+// knob to tune if turns are cut off too early or feel too laggy.
+const SILENCE_TIMEOUT_MS = 1400;
+
 // A ~50ms silent WAV. Played once, synchronously, inside a real click handler
 // so the browser treats the <audio> element as "unlocked" for autoplay —
 // every later programmatic .play() on that same element (loading a real TTS
@@ -15,9 +21,14 @@ const SpeechRecognitionAPI =
 const SILENT_AUDIO_SRC =
   "data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA";
 
-// Strips markdown / asterisk stage-directions so TTS doesn't try to speak symbols aloud
+// Strips things that would sound garbled or nonsensical if read aloud
+// verbatim — fenced code blocks and LaTeX math — replacing each with a
+// short spoken filler, then strips remaining markdown symbols.
 function cleanForSpeech(text) {
   return text
+    .replace(/```[\s\S]*?```/g, " I've written that out in the code block above. ")
+    .replace(/\$\$[\s\S]*?\$\$/g, " — shown as an equation above. ")
+    .replace(/\$[^$\n]+\$/g, " — shown as an equation above. ")
     .replace(/\*[^*]*\*/g, " ")
     .replace(/[*_#`~]/g, "")
     .replace(/\s+/g, " ")
@@ -55,6 +66,8 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
   const [voiceError, setVoiceError] = useState("");
   const [cameraBusy, setCameraBusy] = useState(false);
   const [showCameraModal, setShowCameraModal] = useState(false);
+  const [micMuted, setMicMuted] = useState(false);
+  const [speakerMuted, setSpeakerMuted] = useState(false);
 
   const scrollRef = useRef(null);
   const callScrollRef = useRef(null);
@@ -63,6 +76,19 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
   const voiceModeRef = useRef(false);
   const callStateRef = useRef("idle");
   const speakStartedAtRef = useRef(0);
+  const cameraOpenRef = useRef(false);
+  const silenceTimerRef = useRef(null);
+  const finalTranscriptRef = useRef("");
+  const micMutedRef = useRef(false);
+  const speakerMutedRef = useRef(false);
+
+  useEffect(() => {
+    micMutedRef.current = micMuted;
+  }, [micMuted]);
+
+  useEffect(() => {
+    speakerMutedRef.current = speakerMuted;
+  }, [speakerMuted]);
 
   useEffect(() => {
     voiceModeRef.current = voiceMode;
@@ -102,7 +128,16 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
     );
   }
 
+  // Sets both the state (for render) and the ref (readable synchronously,
+  // right in this same tick — startListening()'s camera guard needs that,
+  // since React state updates don't apply until the next render).
+  function setCameraModalOpen(open) {
+    cameraOpenRef.current = open;
+    setShowCameraModal(open);
+  }
+
   function endCall() {
+    clearTimeout(silenceTimerRef.current);
     try {
       recognitionRef.current?.abort?.();
     } catch {
@@ -118,7 +153,8 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
   }
 
   function startListening() {
-    if (!voiceModeRef.current) return;
+    if (!voiceModeRef.current || cameraOpenRef.current || micMutedRef.current) return;
+    if (recognitionRef.current) return; // already have a live session — don't stack another one
     if (!SpeechRecognitionAPI) {
       setVoiceError("Voice input isn't supported in this browser — try Chrome or Edge.");
       setVoiceMode(false);
@@ -128,28 +164,33 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
     const recognition = new SpeechRecognitionAPI();
     recognition.lang = speechLocale;
     recognition.interimResults = true;
-    recognition.continuous = false;
-    let finalText = "";
+    // continuous:true + our own silence timer (below) means the mic stays
+    // open across an entire turn instead of the browser auto-stopping and
+    // us restarting it — that start/stop cycling was what caused the
+    // frequent "listening" chime and the mic feeling like it was cutting
+    // people off mid-sentence.
+    recognition.continuous = true;
+    finalTranscriptRef.current = "";
 
     recognition.onstart = () => {
-      // Don't overwrite the "speaking" UI state just because the mic re-opened
-      // in the background for barge-in detection — only flip to "listening"
-      // once the user actually starts producing speech.
       if (callStateRef.current !== "speaking") setCallState("listening");
     };
+
     recognition.onresult = (event) => {
       let interim = "";
-      finalText = "";
+      let newFinal = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) finalText += transcript;
+        if (event.results[i].isFinal) newFinal += transcript;
         else interim += transcript;
       }
-      setLiveCaption(interim || finalText);
-      // The user has started actually talking — if the AI is mid-reply, this
-      // IS the interrupt: cut it off immediately rather than waiting for
-      // recognition.onend, so the barge-in feels instant.
-      const spokenText = (interim || finalText).trim();
+      if (newFinal) finalTranscriptRef.current += newFinal;
+      setLiveCaption((finalTranscriptRef.current + interim).trim());
+
+      const spokenText = (finalTranscriptRef.current + interim).trim();
+
+      // Barge-in: the user has started actually talking while the AI is
+      // mid-reply — cut it off immediately.
       const speakingLongEnough = Date.now() - speakStartedAtRef.current > 800;
       if (spokenText.length >= 4 && speakingLongEnough && callStateRef.current === "speaking") {
         stopCurrentVoice();
@@ -159,17 +200,39 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
         }
         setCallState("listening");
       }
+
+      // This IS the "how long to wait after they stop talking" delay —
+      // every new word resets it, so it only fires once they've genuinely
+      // paused, not the instant they take a breath.
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = setTimeout(() => {
+        if (finalTranscriptRef.current.trim()) {
+          try {
+            recognition.stop(); // graceful stop -> onend below submits the turn
+          } catch {
+            /* already stopped */
+          }
+        }
+      }, SILENCE_TIMEOUT_MS);
     };
+
     recognition.onerror = (event) => {
       if (event.error !== "no-speech" && event.error !== "aborted") {
         setVoiceError("Mic error: " + event.error);
       }
     };
+
     recognition.onend = () => {
-      if (finalText.trim()) {
-        handleVoiceTurn(finalText.trim());
-      } else if (voiceModeRef.current) {
-        startListening(); // just silence — keep the line open
+      clearTimeout(silenceTimerRef.current);
+      recognitionRef.current = null;
+      const finalText = finalTranscriptRef.current.trim();
+      if (finalText) {
+        handleVoiceTurn(finalText);
+      } else if (voiceModeRef.current && !cameraOpenRef.current) {
+        // Recognition ended with nothing said (e.g. some browsers force-end
+        // a session after ~60s regardless of continuous:true) — quietly
+        // reopen it rather than leaving the call dead.
+        startListening();
       }
     };
 
@@ -182,9 +245,6 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
   }
 
   async function handleVoiceTurn(text) {
-    // If the user spoke while the AI was still talking, the interrupt already
-    // happened in onresult above — this just makes sure everything's fully
-    // stopped before the new turn starts.
     stopCurrentVoice();
     if (audioRef.current) {
       audioRef.current.pause();
@@ -204,12 +264,16 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
         { role: "assistant", content: "(The connection to this era was lost. Please try again.)" },
       ]);
     }
-    // Re-open the mic immediately instead of waiting for speak() to finish —
-    // this is what makes barge-in possible: recognition is live during "speaking".
     if (voiceModeRef.current) startListening();
   }
 
   async function speak(text) {
+    if (speakerMutedRef.current) {
+      // Speaker is muted — don't fetch or play any audio at all, cloud or
+      // browser fallback. Still resolve promptly so the caller (which calls
+      // startListening() right after) doesn't wait on anything.
+      return;
+    }
     setCallState("speaking");
     speakStartedAtRef.current = Date.now();
     setVoiceError("");
@@ -224,10 +288,6 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
         playVoice(url, audio).catch(reject);
       });
     } catch (err) {
-      // ElevenLabs failed, OR the user interrupted (we pause() the audio on
-      // barge-in, which also rejects/ends this promise) — either way, don't
-      // fall back to browser TTS if we're not still in "speaking" state,
-      // since that would mean the user already cut in and moved on.
       if (callStateRef.current === "speaking") {
         setVoiceError("Couldn't reach the cloud voice — using your browser's built-in voice instead.");
         await speakWithBrowserVoice(clean, speechLocale);
@@ -242,14 +302,53 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
     } else {
       setVoiceError("");
       setVoiceMode(true);
-      // Unlock autoplay for this <audio> element inside this real click —
-      // required so later programmatic play() calls (after each AI reply)
-      // aren't silently blocked by the browser.
+      // Start each new call with both unmuted — muting is a per-call choice,
+      // not something that should silently carry over from last time.
+      setMicMuted(false);
+      micMutedRef.current = false;
+      setSpeakerMuted(false);
+      speakerMutedRef.current = false;
       if (audioRef.current) {
         audioRef.current.src = SILENT_AUDIO_SRC;
-        audioRef.current.play().catch(() => { });
+        audioRef.current.play().catch(() => {});
       }
       startListening();
+    }
+  }
+
+  function toggleMic() {
+    const next = !micMuted;
+    setMicMuted(next);
+    micMutedRef.current = next;
+    if (next) {
+      // Muting mid-call: stop listening right away rather than waiting for
+      // the current silence timer to expire.
+      clearTimeout(silenceTimerRef.current);
+      try {
+        recognitionRef.current?.abort?.();
+      } catch {
+        /* no-op */
+      }
+      recognitionRef.current = null;
+      setLiveCaption("");
+      if (callStateRef.current !== "speaking") setCallState("idle");
+    } else if (!cameraOpenRef.current) {
+      startListening();
+    }
+  }
+
+  function toggleSpeaker() {
+    const next = !speakerMuted;
+    setSpeakerMuted(next);
+    speakerMutedRef.current = next;
+    if (next) {
+      // Muting mid-reply: cut off whatever's currently playing immediately.
+      stopCurrentVoice();
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+      if (callStateRef.current === "speaking") setCallState("listening");
     }
   }
 
@@ -272,45 +371,64 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
     }
   }
 
-  // On-demand camera "Show" feature: opens the camera, grabs exactly ONE
-  // frame, turns the camera off immediately, then sends just that frame.
-  // The camera is never left running / never continuously observing.
+  // Opening the camera now explicitly stops the mic/voice first — camera
+  // and mic fighting for control was exactly what caused it to keep
+  // talking/listening unpredictably while the camera was up.
   function handleCameraOpen() {
     setVoiceError("");
-    setShowCameraModal(true);
+    clearTimeout(silenceTimerRef.current);
+    try {
+      recognitionRef.current?.abort?.();
+    } catch {
+      /* no-op */
+    }
+    recognitionRef.current = null;
+    stopCurrentVoice();
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+    setCameraModalOpen(true);
   }
 
   async function handleCameraCapture(imageBase64, question) {
-  setShowCameraModal(false);
-  setCameraBusy(true);
-  try {
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", content: question || "Here's what I'm showing you.", image: imageBase64 },
-    ]);
-    setIsTyping(true);
-    const data = await fetchVision({ characterId: character.id, sessionId, imageBase64, question, language });
-    setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
-    if (voiceModeRef.current) speak(data.reply);
-  } catch (err) {
-    setVoiceError("Couldn't process that image — please try again.");
-  } finally {
-    setIsTyping(false);
-    setCameraBusy(false);
+    setCameraModalOpen(false);
+    setCameraBusy(true);
+    try {
+      setMessages((prev) => [
+        ...prev,
+        { role: "user", content: question || "Here's what I'm showing you.", image: imageBase64 },
+      ]);
+      setIsTyping(true);
+      const data = await fetchVision({ characterId: character.id, sessionId, imageBase64, question, language });
+      setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
+      if (voiceModeRef.current) {
+        speak(data.reply);
+        startListening(); // mic was off for the whole camera flow — resume it now, same as after a normal voice turn
+      }
+    } catch (err) {
+      setVoiceError("Couldn't process that image — please try again.");
+    } finally {
+      setIsTyping(false);
+      setCameraBusy(false);
+    }
   }
-}
 
   async function handleClear() {
     await resetChat({ characterId: character.id, sessionId });
     setMessages([]);
   }
 
-  const statusText = {
+  const baseStatusText = {
     listening: "Listening…",
     thinking: `${character.name} is thinking…`,
     speaking: `${character.name} is speaking…`,
     idle: "Tap the orb to speak",
   }[callState];
+  const statusText = [
+    baseStatusText,
+    micMuted ? "· mic muted" : null,
+    speakerMuted ? "· speaker muted" : null,
+  ].filter(Boolean).join(" ");
 
   return (
     <section className="chat-panel">
@@ -364,6 +482,20 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
             <button className="ghost-btn" onClick={handleCameraOpen} disabled={cameraBusy} title="Show something via camera">
               {cameraBusy ? "📷…" : "📷 Show"}
             </button>
+            <button
+              className={`icon-toggle-btn ${micMuted ? "muted" : ""}`}
+              onClick={toggleMic}
+              title={micMuted ? "Unmute microphone" : "Mute microphone"}
+            >
+              {micMuted ? "🎙️🚫" : "🎙️"}
+            </button>
+            <button
+              className={`icon-toggle-btn ${speakerMuted ? "muted" : ""}`}
+              onClick={toggleSpeaker}
+              title={speakerMuted ? "Unmute speaker" : "Mute speaker"}
+            >
+              {speakerMuted ? "🔇" : "🔊"}
+            </button>
             <button className="hang-up-btn" onClick={toggleVoiceMode}>End call</button>
           </div>
         </div>
@@ -407,8 +539,8 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
         </>
       )}
       {showCameraModal && (
-  <CameraCaptureModal onCapture={handleCameraCapture} onClose={() => setShowCameraModal(false)} />
-)}
+        <CameraCaptureModal onCapture={handleCameraCapture} onClose={() => setCameraModalOpen(false)} />
+      )}
     </section>
   );
 }

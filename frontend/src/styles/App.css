@@ -679,6 +679,26 @@
   gap: 12px;
 }
 
+.icon-toggle-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-soft);
+  font-size: 18px;
+  color: var(--text-hi);
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.icon-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.icon-toggle-btn.muted {
+  background: rgba(255, 107, 107, 0.18);
+  border-color: rgba(255, 107, 107, 0.5);
+}
+
 .camera-btn {
   padding: 12px 14px;
   font-size: 16px;
@@ -1038,4 +1058,91 @@
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+/* =========================================================
+   Markdown / code blocks / math (inside AI reply bubbles)
+   ========================================================= */
+.markdown-body p {
+  margin: 0 0 8px;
+}
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+.markdown-body ul,
+.markdown-body ol {
+  margin: 6px 0 10px 20px;
+}
+.markdown-body table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13.5px;
+}
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--border-soft);
+  padding: 6px 10px;
+}
+
+.inline-code {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: "Fira Code", ui-monospace, monospace;
+  font-size: 0.9em;
+}
+
+.code-block {
+  margin: 10px 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0d0c18;
+  border: 1px solid var(--border-soft);
+}
+
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+}
+
+.code-block-lang {
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.code-copy-btn {
+  background: transparent;
+  border: 1px solid var(--border-soft);
+  color: var(--text-hi);
+  border-radius: var(--radius-pill);
+  padding: 3px 12px;
+  font-size: 12px;
+}
+
+.code-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.code-block pre {
+  margin: 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+}
+
+.code-block code {
+  font-family: "Fira Code", ui-monospace, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+/* KaTeX math blocks shouldn't overflow narrow chat bubbles on mobile */
+.markdown-body .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 0;
 }
