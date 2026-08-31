@@ -14,4 +14,6 @@ pyjwt==2.9.0
 python-multipart==0.0.12
 google-auth==2.35.0
 cloudinary==1.41.0
+
+setuptools<81
 razorpay==1.4.2
