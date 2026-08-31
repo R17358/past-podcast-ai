@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Mic, MicOff, MessageCircle, Phone, PhoneOff, Volume2, VolumeX, Camera, Landmark, Send, AlertTriangle, Pencil } from "lucide-react";
+import { Mic, MicOff, MessageCircle, Phone, PhoneOff, Volume2, VolumeX, Camera, Landmark, Send, AlertTriangle, Pencil, Crown, LockKeyhole } from "lucide-react";
 import MessageBubble from "./MessageBubble.jsx";
 import { sendMessage, resetChat, fetchVoice, fetchVision, stopCurrentVoice, playVoice } from "../services/api.js";
 import CameraCaptureModal from "./CameraCaptureModal.jsx";
@@ -87,7 +87,7 @@ function mergeFinalSegment(existing, incoming) {
   return `${e} ${inc}`.trim(); // genuinely new content — append
 }
 
-export default function ChatWindow({ character, sessionId, language = "en", speechLocale = "en-US", onEditCharacter }) {
+export default function ChatWindow({ character, sessionId, language = "en", speechLocale = "en-US", onEditCharacter, onUnlockClick }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -172,6 +172,30 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
             <div className="medallion medallion-lg"><Landmark size={28} strokeWidth={1.75} /></div>
             <h2>Choose a sage to begin</h2>
             <p>Pick a character from the Hall to start a conversation.</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (!character.unlocked) {
+    const isSubscription = character.access_type === "subscription";
+    return (
+      <section className="chat-panel">
+        <div className="messages">
+          <div className="empty-state">
+            <span className="medallion medallion-lg locked-hero">
+              {isSubscription ? <Crown size={28} strokeWidth={1.75} /> : <LockKeyhole size={28} strokeWidth={1.75} />}
+            </span>
+            <h2>{character.name} is locked</h2>
+            <p>
+              {isSubscription
+                ? "This sage is available with an active subscription."
+                : `Unlock this sage for ${character.unlock_points} points, earned by taking quizzes.`}
+            </p>
+            <button className="primary-btn" onClick={() => onUnlockClick?.(character)}>
+              {isSubscription ? "Get subscription" : `Unlock for ${character.unlock_points} pts`}
+            </button>
           </div>
         </div>
       </section>

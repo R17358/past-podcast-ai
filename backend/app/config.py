@@ -60,5 +60,16 @@ class Settings:
     CLOUDINARY_API_KEY: str = os.getenv("CLOUDINARY_API_KEY", "")
     CLOUDINARY_API_SECRET: str = os.getenv("CLOUDINARY_API_SECRET", "")
 
+    # --- Gamification: quiz points ---
+    # Awarded per correct answer, once per (user, quiz) — see quiz_store.has_attempted.
+    POINTS_PER_CORRECT_ANSWER: int = int(os.getenv("POINTS_PER_CORRECT_ANSWER", "10"))
+
+    # --- Razorpay (platform-wide subscription) ---
+    RAZORPAY_KEY_ID: str = os.getenv("RAZORPAY_KEY_ID", "")
+    RAZORPAY_KEY_SECRET: str = os.getenv("RAZORPAY_KEY_SECRET", "")
+    # Amount is in paise (smallest INR unit) — 19900 = ₹199.00
+    SUBSCRIPTION_PRICE_PAISE: int = int(os.getenv("SUBSCRIPTION_PRICE_PAISE", "19900"))
+    SUBSCRIPTION_DURATION_DAYS: int = int(os.getenv("SUBSCRIPTION_DURATION_DAYS", "30"))
+
 
 settings = Settings()

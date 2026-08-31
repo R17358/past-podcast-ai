@@ -10,7 +10,7 @@ from app.models.schemas import (
     UpdateProfileRequest,
     UserOut,
 )
-from app.services import auth_service
+from app.services import auth_service, character_store
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -22,6 +22,11 @@ def _user_out(doc: dict) -> UserOut:
         email=doc["email"],
         avatar_url=doc.get("avatar_url"),
         auth_provider=doc.get("auth_provider", "google" if doc.get("google_id") and not doc.get("password_hash") else "password"),
+        role=doc.get("role", "user"),
+        points=doc.get("points", 0),
+        unlocked_character_ids=doc.get("unlocked_character_ids", []),
+        subscription_active=character_store.is_subscription_active(doc),
+        subscription_expires_at=doc.get("subscription_expires_at"),
     )
 
 
@@ -33,6 +38,10 @@ def signup(payload: SignupRequest):
             "email": payload.email.lower().strip(),
             "password_hash": auth_service.hash_password(payload.password),
             "auth_provider": "password",
+            "role": "user",
+            "points": 0,
+            "unlocked_character_ids": [],
+            "subscription_active": False,
         })
     except DuplicateKeyError:
         raise HTTPException(status_code=409, detail="An account with this email already exists")

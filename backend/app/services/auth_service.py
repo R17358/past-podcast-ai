@@ -70,6 +70,10 @@ def get_or_create_google_user(payload: dict) -> dict:
         "google_id": payload.get("sub"),
         "avatar_url": payload.get("picture"),
         "auth_provider": "google",
+        "role": "user",
+        "points": 0,
+        "unlocked_character_ids": [],
+        "subscription_active": False,
     }
     result = users_collection.insert_one(new_user)
     new_user["_id"] = result.inserted_id
@@ -121,4 +125,25 @@ def get_current_user(user_id: Optional[str] = Depends(get_optional_user_id)) -> 
     user = users_collection.find_one({"_id": ObjectId(user_id)})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    return user
+
+
+def get_optional_user(user_id: Optional[str] = Depends(get_optional_user_id)) -> Optional[dict]:
+    """Like get_current_user, but returns None instead of raising when
+    there's no (or an invalid) token — for endpoints like the character list
+    that work for everyone but need to know WHO's asking to compute
+    per-user unlock status."""
+    if not user_id:
+        return None
+    from bson import ObjectId
+
+    return users_collection.find_one({"_id": ObjectId(user_id)})
+
+
+def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    """Use as a dependency on admin-only routes (adding/editing characters,
+    managing quizzes). Regular users get a 403, not just a hidden button —
+    the UI hiding the button is a convenience, this is the actual gate."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
     return user

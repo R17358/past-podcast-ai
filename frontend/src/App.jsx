@@ -6,8 +6,12 @@ import AddCharacterModal from "./components/AddCharacterModal.jsx";
 import AuthModal from "./components/AuthModal.jsx";
 import EditProfileModal from "./components/EditProfileModal.jsx";
 import EditCharacterModal from "./components/EditCharacterModal.jsx";
+import UnlockModal from "./components/UnlockModal.jsx";
+import SubscribeModal from "./components/SubscribeModal.jsx";
+import QuizListModal from "./components/QuizListModal.jsx";
+import AdminQuizModal from "./components/AdminQuizModal.jsx";
 import LanguageSelector, { FALLBACK_LANGUAGES } from "./components/LanguageSelector.jsx";
-import { fetchCharacters, fetchMe, getToken, logout } from "./services/api.js";
+import { fetchCategories, fetchCharacters, fetchMe, getToken, logout } from "./services/api.js";
 import "./styles/App.css";
 
 // One id per browser tab/session — used for pre-login guest polish (e.g.
@@ -17,9 +21,16 @@ const SESSION_ID = crypto.randomUUID();
 
 export default function App() {
   const [characters, setCharacters] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("All");
   const [activeId, setActiveId] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingCharacter, setEditingCharacter] = useState(null);
+  const [unlockingCharacter, setUnlockingCharacter] = useState(null);
+  const [showSubscribe, setShowSubscribe] = useState(false);
+  const [showQuizzes, setShowQuizzes] = useState(false);
+  const [showAdminQuizzes, setShowAdminQuizzes] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false); // becomes true once we know whether a saved session is valid
@@ -29,49 +40,63 @@ export default function App() {
     () => localStorage.getItem("hos-language") || "en"
   );
 
+  const isAdmin = user?.role === "admin";
+
   useEffect(() => {
     localStorage.setItem("hos-language", language);
   }, [language]);
 
+  // Login is mandatory — the app-shell below only renders once `user` is
+  // set. Restore a saved session if the token is still valid; otherwise
+  // fall through to the sign-in gate.
   useEffect(() => {
-    fetchCharacters()
-      .then((data) => {
-        setCharacters(data);
-        if (data.length) setActiveId(data[0].id);
-      })
-      .catch(() => setLoadError("Could not reach the backend. Is it running on the configured URL?"));
-
-    // Login is mandatory — the app-shell below only renders once `user` is
-    // set. Restore a saved session if the token is still valid; otherwise
-    // fall through to the sign-in gate.
     if (getToken()) {
       fetchMe()
-        .then((u) => {
-          setUser(u);
-          setAuthChecked(true);
-        })
-        .catch(() => {
-          logout(); // stale/expired token
-          setAuthChecked(true);
-        });
+        .then((u) => setUser(u))
+        .catch(() => logout()) // stale/expired token
+        .finally(() => setAuthChecked(true));
     } else {
       setAuthChecked(true);
     }
   }, []);
 
+  // Character list depends on who's asking (unlock status is per-user) and
+  // on the search/category filters — refetch whenever any of those change,
+  // but only once we're actually signed in.
+  useEffect(() => {
+    if (!user) return;
+    fetchCharacters({ search, category })
+      .then((data) => {
+        setCharacters(data);
+        setActiveId((prev) => (data.some((c) => c.id === prev) ? prev : data[0]?.id ?? null));
+      })
+      .catch(() => setLoadError("Could not reach the backend. Is it running on the configured URL?"));
+  }, [user, search, category]);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchCategories().then(setCategories).catch(() => {});
+  }, [user]);
+
   const activeCharacter = characters.find((c) => c.id === activeId) || null;
   const speechLocale =
     FALLBACK_LANGUAGES.find((l) => l.code === language)?.speech_locale || "en-US";
+
+  function refreshCharacterList() {
+    fetchCharacters({ search, category }).then(setCharacters).catch(() => {});
+  }
 
   function handleCreated(newCharacter) {
     setCharacters((prev) => [...prev, newCharacter]);
     setActiveId(newCharacter.id);
     setShowAddModal(false);
+    fetchCategories().then(setCategories).catch(() => {});
   }
 
   function handleCharacterUpdated(updated) {
     setCharacters((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
     setEditingCharacter(null);
+    fetchCategories().then(setCategories).catch(() => {});
   }
 
   function handleSelect(c) {
@@ -91,6 +116,28 @@ export default function App() {
   function handleLogout() {
     logout();
     setUser(null);
+    setCharacters([]);
+    setActiveId(null);
+  }
+
+  // Points changed (quiz reward) or a character got unlocked — refresh
+  // both the user (points/unlocked list) and the character list (so lock
+  // badges update immediately) instead of trusting stale local state.
+  function refreshUserAndCharacters() {
+    fetchMe().then(setUser).catch(() => {});
+    refreshCharacterList();
+  }
+
+  function handleUnlocked(updatedCharacter) {
+    setCharacters((prev) => prev.map((c) => (c.id === updatedCharacter.id ? updatedCharacter : c)));
+    setUnlockingCharacter(null);
+    fetchMe().then(setUser).catch(() => {});
+  }
+
+  function handleSubscribed() {
+    setShowSubscribe(false);
+    setUnlockingCharacter(null);
+    refreshUserAndCharacters();
   }
 
   // Not signed in yet — show only the sign-in gate (no character list, no
@@ -130,11 +177,20 @@ export default function App() {
           setSidebarOpen(false);
         }}
         onEditCharacter={setEditingCharacter}
+        onUnlockClick={setUnlockingCharacter}
         language={language}
         onLanguageChange={setLanguage}
         user={user}
+        isAdmin={isAdmin}
         onEditProfile={() => setShowEditProfile(true)}
         onLogout={handleLogout}
+        search={search}
+        onSearchChange={setSearch}
+        category={category}
+        onCategoryChange={setCategory}
+        categories={categories}
+        onOpenQuizzes={() => setShowQuizzes(true)}
+        onOpenAdminQuizzes={() => setShowAdminQuizzes(true)}
       />
 
       {loadError ? (
@@ -153,7 +209,8 @@ export default function App() {
           sessionId={SESSION_ID}
           language={language}
           speechLocale={speechLocale}
-          onEditCharacter={setEditingCharacter}
+          onEditCharacter={isAdmin ? setEditingCharacter : undefined}
+          onUnlockClick={setUnlockingCharacter}
         />
       )}
 
@@ -166,6 +223,36 @@ export default function App() {
           character={editingCharacter}
           onClose={() => setEditingCharacter(null)}
           onUpdated={handleCharacterUpdated}
+        />
+      )}
+
+      {unlockingCharacter && (
+        <UnlockModal
+          character={unlockingCharacter}
+          user={user}
+          onClose={() => setUnlockingCharacter(null)}
+          onUnlocked={handleUnlocked}
+          onOpenSubscribe={() => setShowSubscribe(true)}
+        />
+      )}
+
+      {showSubscribe && (
+        <SubscribeModal user={user} onClose={() => setShowSubscribe(false)} onSubscribed={handleSubscribed} />
+      )}
+
+      {showQuizzes && (
+        <QuizListModal
+          characters={characters}
+          onClose={() => setShowQuizzes(false)}
+          onPointsAwarded={(totalPoints) => setUser((prev) => (prev ? { ...prev, points: totalPoints } : prev))}
+        />
+      )}
+
+      {showAdminQuizzes && isAdmin && (
+        <AdminQuizModal
+          characters={characters}
+          categories={categories}
+          onClose={() => setShowAdminQuizzes(false)}
         />
       )}
 

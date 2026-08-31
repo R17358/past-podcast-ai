@@ -26,6 +26,8 @@ _db = _client[settings.MONGODB_DB_NAME]
 users_collection = _db["users"]
 characters_collection = _db["characters"]
 conversations_collection = _db["conversations"]
+quizzes_collection = _db["quizzes"]
+quiz_attempts_collection = _db["quiz_attempts"]
 
 
 def init_db() -> None:
@@ -51,6 +53,12 @@ def init_db() -> None:
     characters_collection.create_index("id", unique=True)
     conversations_collection.create_index(
         [("owner_key", ASCENDING), ("character_id", ASCENDING)], unique=True
+    )
+    quizzes_collection.create_index("id", unique=True)
+    # One attempt record per (user, quiz) — this is also what makes points
+    # a one-time award per quiz instead of farmable by resubmitting.
+    quiz_attempts_collection.create_index(
+        [("user_id", ASCENDING), ("quiz_id", ASCENDING)], unique=True
     )
 
     if characters_collection.count_documents({}) == 0:

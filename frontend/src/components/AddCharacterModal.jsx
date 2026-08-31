@@ -2,6 +2,8 @@ import { useState } from "react";
 import { addCharacter } from "../services/api.js";
 import ImageUploadField from "./ImageUploadField.jsx";
 
+const COMMON_CATEGORIES = ["Science", "Philosophy", "History", "Mythology", "Anime", "Literature", "Other"];
+
 export default function AddCharacterModal({ onClose, onCreated }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -9,6 +11,9 @@ export default function AddCharacterModal({ onClose, onCreated }) {
   const [emoji, setEmoji] = useState("🧑\u200d🎓");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [voiceId, setVoiceId] = useState("");
+  const [category, setCategory] = useState("General");
+  const [accessType, setAccessType] = useState("free");
+  const [unlockPoints, setUnlockPoints] = useState(50);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -25,10 +30,13 @@ export default function AddCharacterModal({ onClose, onCreated }) {
         avatar_emoji: emoji || "🧑\u200d🎓",
         avatar_url: avatarUrl || null,
         voice_id: voiceId.trim() || null,
+        category: category.trim() || "General",
+        access_type: accessType,
+        unlock_points: accessType === "points" ? Number(unlockPoints) || 0 : 0,
       });
       onCreated(created);
     } catch (err) {
-      setError("Could not summon this character. Check the backend / API keys and try again.");
+      setError(err?.response?.data?.detail || "Could not summon this character. Check the backend / API keys and try again.");
     } finally {
       setLoading(false);
     }
@@ -56,10 +64,39 @@ export default function AddCharacterModal({ onClose, onCreated }) {
               placeholder="Who were they, and what should they be known for in conversation?"
             />
           </div>
-          <div className="field">
-            <label>Era (optional)</label>
-            <input value={era} onChange={(e) => setEra(e.target.value)} placeholder="e.g. 1867 – 1934" />
+          <div className="field-row">
+            <div className="field">
+              <label>Era (optional)</label>
+              <input value={era} onChange={(e) => setEra(e.target.value)} placeholder="e.g. 1867 – 1934" />
+            </div>
+            <div className="field">
+              <label>Category</label>
+              <input value={category} onChange={(e) => setCategory(e.target.value)} list="category-suggestions" placeholder="e.g. Science" />
+              <datalist id="category-suggestions">
+                {COMMON_CATEGORIES.map((c) => <option key={c} value={c} />)}
+              </datalist>
+            </div>
           </div>
+
+          <div className="field">
+            <label>Access</label>
+            <div className="access-type-radios">
+              <label><input type="radio" checked={accessType === "free"} onChange={() => setAccessType("free")} /> Free</label>
+              <label><input type="radio" checked={accessType === "points"} onChange={() => setAccessType("points")} /> Points</label>
+              <label><input type="radio" checked={accessType === "subscription"} onChange={() => setAccessType("subscription")} /> Subscription</label>
+            </div>
+            {accessType === "points" && (
+              <input
+                type="number"
+                min={1}
+                value={unlockPoints}
+                onChange={(e) => setUnlockPoints(e.target.value)}
+                placeholder="Points required to unlock"
+                style={{ marginTop: 8 }}
+              />
+            )}
+          </div>
+
           <div className="field">
             <label>Fallback icon (emoji, used if no photo)</label>
             <input value={emoji} onChange={(e) => setEmoji(e.target.value)} placeholder="🧪" />

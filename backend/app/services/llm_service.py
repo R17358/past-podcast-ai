@@ -9,7 +9,8 @@ restarts and can follow a logged-in user across devices. This module is
 purely "given some context, produce the next reply."
 """
 import base64
-from typing import List
+import json
+from typing import List, Optional
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
@@ -139,3 +140,63 @@ def ask_with_image(persona_prompt: str, image_base64: str, question: str, langua
     llm = _get_llm()
     response = llm.invoke([SystemMessage(content=system_content), message])
     return response.content
+
+
+def generate_quiz_questions(topic: str, character_name: Optional[str] = None, num_questions: int = 5) -> List[dict]:
+    """
+    Used by the admin's "AI-generate" quiz option — asks Gemini for a batch
+    of multiple-choice questions about a topic (optionally framed around one
+    character) and returns them as plain dicts ready for quiz_store.create_quiz.
+    Raises ValueError if the model's output can't be parsed into valid
+    questions, so the router can turn that into a clean 502 instead of
+    silently saving a broken quiz.
+    """
+    persona_bit = f", focused specifically on {character_name} — their life, ideas, and era" if character_name else ""
+    instruction = (
+        f"Write exactly {num_questions} multiple-choice quiz questions about: {topic}{persona_bit}.\n"
+        "Rules:\n"
+        "- Each question needs exactly 4 answer options, only one of which is correct.\n"
+        "- Vary difficulty and don't repeat the same fact across questions.\n"
+        "- Keep each question and option short (one line).\n"
+        "- Include a one-sentence explanation for why the correct answer is correct.\n\n"
+        "Return ONLY a raw JSON array, no markdown code fences, no commentary before or after. "
+        "Each array item must look exactly like this:\n"
+        '{"prompt": "...", "options": ["...", "...", "...", "..."], "correct_index": 0, "explanation": "..."}\n'
+        "correct_index is the 0-based index into \"options\" of the correct answer."
+    )
+    llm = _get_llm(temperature=0.5)
+    response = llm.invoke([HumanMessage(content=instruction)])
+    text = response.content.strip()
+
+    # Gemini sometimes wraps JSON in a markdown fence despite instructions — strip it.
+    if text.startswith("```"):
+        text = text.strip("`").strip()
+        if text.lower().startswith("json"):
+            text = text[4:].strip()
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Model didn't return valid JSON: {exc}")
+
+    questions = []
+    for item in data if isinstance(data, list) else []:
+        options = item.get("options")
+        if not isinstance(options, list) or len(options) < 2:
+            continue
+        try:
+            correct_index = int(item.get("correct_index", -1))
+        except (TypeError, ValueError):
+            continue
+        if not (0 <= correct_index < len(options)) or not item.get("prompt"):
+            continue
+        questions.append({
+            "prompt": item["prompt"],
+            "options": options,
+            "correct_index": correct_index,
+            "explanation": item.get("explanation"),
+        })
+
+    if not questions:
+        raise ValueError("Model did not return any valid quiz questions")
+    return questions

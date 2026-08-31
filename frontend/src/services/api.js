@@ -86,8 +86,16 @@ export async function uploadImage(file) {
 
 // --- Characters ---
 
-export async function fetchCharacters() {
-  const { data } = await api.get("/api/characters");
+export async function fetchCharacters({ search, category } = {}) {
+  const params = {};
+  if (search && search.trim()) params.search = search.trim();
+  if (category && category !== "All") params.category = category;
+  const { data } = await api.get("/api/characters", { params });
+  return data;
+}
+
+export async function fetchCategories() {
+  const { data } = await api.get("/api/characters/meta/categories");
   return data;
 }
 
@@ -99,6 +107,93 @@ export async function addCharacter(payload) {
 export async function editCharacter(characterId, payload) {
   const { data } = await api.patch(`/api/characters/${characterId}`, payload);
   return data;
+}
+
+export async function unlockCharacter(characterId) {
+  const { data } = await api.post(`/api/characters/${characterId}/unlock`);
+  return data;
+}
+
+// --- Quizzes (gamification) ---
+
+export async function fetchQuizzes({ characterId, category } = {}) {
+  const params = {};
+  if (characterId) params.character_id = characterId;
+  if (category) params.category = category;
+  const { data } = await api.get("/api/quizzes", { params });
+  return data;
+}
+
+export async function fetchQuiz(quizId) {
+  const { data } = await api.get(`/api/quizzes/${quizId}`);
+  return data;
+}
+
+export async function submitQuiz(quizId, answers) {
+  const { data } = await api.post(`/api/quizzes/${quizId}/submit`, { answers });
+  return data;
+}
+
+export async function fetchAllQuizzesAdmin() {
+  const { data } = await api.get("/api/quizzes/admin/all");
+  return data;
+}
+
+export async function createQuiz(payload) {
+  const { data } = await api.post("/api/quizzes", payload);
+  return data;
+}
+
+export async function generateQuiz(payload) {
+  const { data } = await api.post("/api/quizzes/generate", payload);
+  return data;
+}
+
+export async function editQuiz(quizId, payload) {
+  const { data } = await api.patch(`/api/quizzes/${quizId}`, payload);
+  return data;
+}
+
+export async function deleteQuiz(quizId) {
+  await api.delete(`/api/quizzes/${quizId}`);
+}
+
+// --- Subscription (Razorpay) ---
+
+export async function fetchSubscriptionStatus() {
+  const { data } = await api.get("/api/subscription/status");
+  return data;
+}
+
+export async function createSubscriptionOrder() {
+  const { data } = await api.post("/api/subscription/create-order");
+  return data;
+}
+
+export async function verifySubscriptionPayment(payload) {
+  const { data } = await api.post("/api/subscription/verify", payload);
+  return data;
+}
+
+// Loads Razorpay's checkout.js once and resolves true/false — used right
+// before opening the checkout widget so we don't add a <script> tag for
+// people who never touch the subscription flow.
+export function loadRazorpayScript() {
+  if (window.Razorpay) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const existing = document.getElementById("razorpay-checkout-script");
+    if (existing) {
+      existing.addEventListener("load", () => resolve(true), { once: true });
+      existing.addEventListener("error", () => resolve(false), { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.id = "razorpay-checkout-script";
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
 }
 
 // --- Languages ---
