@@ -11,6 +11,8 @@ function GoogleSignInButton({ onCredential }) {
   const buttonRef = useRef(null);
 
   useEffect(() => {
+    console.log("client")
+    console.log(GOOGLE_CLIENT_ID)
     if (!GOOGLE_CLIENT_ID) return;
 
     function render() {
