@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from app.models.schemas import Character, AddCharacterRequest
+from app.models.schemas import Character, AddCharacterRequest, UpdateCharacterRequest
 from app.services import character_store, llm_service
 
 router = APIRouter(prefix="/api/characters", tags=["characters"])
@@ -38,5 +38,18 @@ def add_character(payload: AddCharacterRequest):
         title=payload.title or "",
         voice_id=payload.voice_id,
         avatar_emoji=payload.avatar_emoji or "🧑\u200d🎓",
+        avatar_url=payload.avatar_url,
     )
     return new_character
+
+
+@router.patch("/{character_id}", response_model=Character)
+def edit_character(character_id: str, payload: UpdateCharacterRequest):
+    """Edits an existing character's profile — name, title, era, description,
+    voice, and avatar (emoji fallback or uploaded photo URL)."""
+    if not character_store.get_character(character_id):
+        raise HTTPException(status_code=404, detail="Character not found")
+    updated = character_store.update_character(character_id, payload.model_dump(exclude_unset=True))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Character not found")
+    return updated

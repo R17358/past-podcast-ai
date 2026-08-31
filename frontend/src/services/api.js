@@ -63,6 +63,27 @@ export async function fetchMe() {
   return data;
 }
 
+export async function googleLogin({ idToken }) {
+  const { data } = await api.post("/api/auth/google", { id_token: idToken });
+  return _saveSession(data);
+}
+
+export async function updateProfile(payload) {
+  const { data } = await api.patch("/api/auth/me", payload);
+  return data;
+}
+
+// --- Uploads (Cloudinary-backed avatar photos) ---
+
+export async function uploadImage(file) {
+  const form = new FormData();
+  form.append("file", file);
+  const { data } = await api.post("/api/uploads/image", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data.url;
+}
+
 // --- Characters ---
 
 export async function fetchCharacters() {
@@ -72,6 +93,11 @@ export async function fetchCharacters() {
 
 export async function addCharacter(payload) {
   const { data } = await api.post("/api/characters", payload);
+  return data;
+}
+
+export async function editCharacter(characterId, payload) {
+  const { data } = await api.patch(`/api/characters/${characterId}`, payload);
   return data;
 }
 

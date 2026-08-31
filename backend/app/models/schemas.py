@@ -15,6 +15,7 @@ class Character(BaseModel):
     persona_prompt: str               # full system instruction used by the LLM
     voice_id: Optional[str] = None    # ElevenLabs voice id, falls back to default
     avatar_emoji: str = "🧑\u200d🏫"
+    avatar_url: Optional[str] = None  # Cloudinary photo URL — takes priority over avatar_emoji when set
     locked: bool = False              # for the "unlock new character" feature
     unlock_hint: Optional[str] = None
 
@@ -26,6 +27,18 @@ class AddCharacterRequest(BaseModel):
     title: Optional[str] = ""
     voice_id: Optional[str] = None
     avatar_emoji: Optional[str] = "🧑\u200d🎓"
+    avatar_url: Optional[str] = None
+
+
+class UpdateCharacterRequest(BaseModel):
+    """All fields optional — only the ones provided get updated."""
+    name: Optional[str] = Field(None, min_length=1)
+    description: Optional[str] = Field(None, min_length=3)
+    era: Optional[str] = None
+    title: Optional[str] = None
+    voice_id: Optional[str] = None
+    avatar_emoji: Optional[str] = None
+    avatar_url: Optional[str] = None
 
 
 class ChatMessage(BaseModel):
@@ -71,16 +84,31 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class GoogleAuthRequest(BaseModel):
+    id_token: str = Field(..., min_length=10)
+
+
+class UpdateProfileRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=1)
+    avatar_url: Optional[str] = None
+
+
 class UserOut(BaseModel):
     id: str
     name: str
     email: str
+    avatar_url: Optional[str] = None
+    auth_provider: str = "password"
 
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
+
+
+class UploadResponse(BaseModel):
+    url: str
 
 
 # --- Vision (on-demand camera input, e.g. "look at this, Sherlock") ---

@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { addCharacter } from "../services/api.js";
+import ImageUploadField from "./ImageUploadField.jsx";
 
 export default function AddCharacterModal({ onClose, onCreated }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [era, setEra] = useState("");
   const [emoji, setEmoji] = useState("🧑\u200d🎓");
+  const [avatarUrl, setAvatarUrl] = useState("");
   const [voiceId, setVoiceId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -21,6 +23,7 @@ export default function AddCharacterModal({ onClose, onCreated }) {
         description: description.trim(),
         era: era.trim(),
         avatar_emoji: emoji || "🧑\u200d🎓",
+        avatar_url: avatarUrl || null,
         voice_id: voiceId.trim() || null,
       });
       onCreated(created);
@@ -39,6 +42,7 @@ export default function AddCharacterModal({ onClose, onCreated }) {
           Give a name and a short description — the persona, tone and voice will be written for you.
         </p>
         <form onSubmit={handleSubmit}>
+          <ImageUploadField label="Photo (optional)" url={avatarUrl} emoji={emoji} onChange={setAvatarUrl} />
           <div className="field">
             <label>Name</label>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Marie Curie" />
@@ -57,7 +61,7 @@ export default function AddCharacterModal({ onClose, onCreated }) {
             <input value={era} onChange={(e) => setEra(e.target.value)} placeholder="e.g. 1867 – 1934" />
           </div>
           <div className="field">
-            <label>Avatar emoji (optional)</label>
+            <label>Fallback icon (emoji, used if no photo)</label>
             <input value={emoji} onChange={(e) => setEmoji(e.target.value)} placeholder="🧪" />
           </div>
           <div className="field">

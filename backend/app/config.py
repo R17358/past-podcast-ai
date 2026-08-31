@@ -49,5 +49,16 @@ class Settings:
     # usage — and cost — roughly flat no matter how long a conversation gets).
     MEMORY_MAX_RAW_MESSAGES: int = int(os.getenv("MEMORY_MAX_RAW_MESSAGES", "16"))
 
+    # --- Google Sign-In ---
+    # OAuth client ID from https://console.cloud.google.com/apis/credentials
+    # Must match VITE_GOOGLE_CLIENT_ID on the frontend — it's the audience
+    # the backend checks every Google ID token against.
+    GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
+
+    # --- Cloudinary (profile / character avatar photo uploads) ---
+    CLOUDINARY_CLOUD_NAME: str = os.getenv("CLOUDINARY_CLOUD_NAME", "")
+    CLOUDINARY_API_KEY: str = os.getenv("CLOUDINARY_API_KEY", "")
+    CLOUDINARY_API_SECRET: str = os.getenv("CLOUDINARY_API_SECRET", "")
+
 
 settings = Settings()

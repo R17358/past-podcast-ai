@@ -19,6 +19,63 @@ from app.db import users_collection
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
+def verify_google_id_token(token: str) -> dict:
+    """
+    Verifies a Google ID token (sent from the frontend's Google Identity
+    Services button) against our OAuth client ID and returns the decoded
+    payload (contains sub/email/name/picture). Raises HTTPException on any
+    invalid/expired/mismatched-audience token.
+    """
+    if not settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(
+            status_code=503,
+            detail="Google sign-in isn't configured on the server (GOOGLE_CLIENT_ID missing).",
+        )
+    from google.auth.transport import requests as google_requests
+    from google.oauth2 import id_token as google_id_token
+
+    try:
+        payload = google_id_token.verify_oauth2_token(
+            token, google_requests.Request(), settings.GOOGLE_CLIENT_ID
+        )
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid Google sign-in token")
+    return payload
+
+
+def get_or_create_google_user(payload: dict) -> dict:
+    """Finds the user by Google sub/email, or creates a new google-auth-only
+    account (no password_hash) the first time someone signs in with Google."""
+    email = (payload.get("email") or "").lower().strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="Google account has no email")
+
+    user = users_collection.find_one({"email": email})
+    if user:
+        # Backfill provider info + avatar for accounts that existed before Google login was added
+        updates = {}
+        if not user.get("google_id"):
+            updates["google_id"] = payload.get("sub")
+        if not user.get("avatar_url") and payload.get("picture"):
+            updates["avatar_url"] = payload.get("picture")
+        if updates:
+            users_collection.update_one({"_id": user["_id"]}, {"$set": updates})
+            user.update(updates)
+        return user
+
+    new_user = {
+        "name": payload.get("name") or email.split("@")[0],
+        "email": email,
+        "password_hash": None,
+        "google_id": payload.get("sub"),
+        "avatar_url": payload.get("picture"),
+        "auth_provider": "google",
+    }
+    result = users_collection.insert_one(new_user)
+    new_user["_id"] = result.inserted_id
+    return new_user
+
+
 def hash_password(password: str) -> str:
     return _pwd_context.hash(password)
 

@@ -47,6 +47,7 @@ def init_db() -> None:
         raise
 
     users_collection.create_index("email", unique=True)
+    users_collection.create_index("google_id", sparse=True)
     characters_collection.create_index("id", unique=True)
     conversations_collection.create_index(
         [("owner_key", ASCENDING), ("character_id", ASCENDING)], unique=True

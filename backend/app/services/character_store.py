@@ -9,6 +9,8 @@ init_db() seeds it from the original app/data/characters.json.
 import re
 from typing import List, Optional
 
+from pymongo import ReturnDocument
+
 from app.db import characters_collection
 from app.models.schemas import Character
 
@@ -44,7 +46,8 @@ def _unique_id(base_id: str) -> str:
 def add_character(name: str, description: str, persona_prompt: str,
                    era: str = "", title: str = "",
                    voice_id: Optional[str] = None,
-                   avatar_emoji: str = "\U0001f9d1\u200d\U0001f393") -> Character:
+                   avatar_emoji: str = "\U0001f9d1\u200d\U0001f393",
+                   avatar_url: Optional[str] = None) -> Character:
     new_id = _unique_id(_slugify(name))
 
     new_character = Character(
@@ -56,7 +59,23 @@ def add_character(name: str, description: str, persona_prompt: str,
         persona_prompt=persona_prompt,
         voice_id=voice_id,
         avatar_emoji=avatar_emoji,
+        avatar_url=avatar_url,
         locked=False,
     )
     characters_collection.insert_one(new_character.model_dump())
     return new_character
+
+
+def update_character(character_id: str, updates: dict) -> Optional[Character]:
+    """Applies a partial update (only keys present in `updates`) to an
+    existing character and returns the updated document, or None if the
+    character doesn't exist."""
+    updates = {k: v for k, v in updates.items() if v is not None}
+    if not updates:
+        return get_character(character_id)
+    result = characters_collection.find_one_and_update(
+        {"id": character_id},
+        {"$set": updates},
+        return_document=ReturnDocument.AFTER,
+    )
+    return _to_character(result) if result else None

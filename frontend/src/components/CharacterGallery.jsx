@@ -1,15 +1,18 @@
+import { LogOut, Pencil, Plus } from "lucide-react";
 import CharacterCard from "./CharacterCard.jsx";
 import LanguageSelector from "./LanguageSelector.jsx";
+import Avatar from "./Avatar.jsx";
 
 export default function CharacterGallery({
   characters,
   activeId,
   onSelect,
   onAddClick,
+  onEditCharacter,
   language,
   onLanguageChange,
   user,
-  onAuthClick,
+  onEditProfile,
   onLogout,
 }) {
   return (
@@ -21,14 +24,14 @@ export default function CharacterGallery({
         </h1>
         <LanguageSelector value={language} onChange={onLanguageChange} />
         <div className="account-row">
-          {user ? (
-            <>
-              <span className="account-name">👤 {user.name}</span>
-              <button className="ghost-btn" onClick={onLogout}>Log out</button>
-            </>
-          ) : (
-            <button className="ghost-btn" onClick={onAuthClick}>Log in / Sign up</button>
-          )}
+          <button className="account-identity" onClick={onEditProfile} title="Edit profile">
+            <Avatar url={user?.avatar_url} emoji={null} size={28} />
+            <span className="account-name">{user?.name}</span>
+            <Pencil size={12} className="account-edit-icon" strokeWidth={2} />
+          </button>
+          <button className="icon-btn" onClick={onLogout} title="Log out" aria-label="Log out">
+            <LogOut size={16} strokeWidth={2} />
+          </button>
         </div>
       </div>
 
@@ -39,10 +42,11 @@ export default function CharacterGallery({
             character={c}
             active={c.id === activeId}
             onSelect={onSelect}
+            onEdit={onEditCharacter}
           />
         ))}
         <button className="add-character-tile" onClick={onAddClick}>
-          <span className="add-plus">+</span>
+          <span className="add-plus"><Plus size={22} strokeWidth={2} /></span>
           <span>Summon a new sage</span>
         </button>
       </div>

@@ -4,7 +4,9 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
+import { Volume2, Loader2 } from "lucide-react";
 import { fetchVoice, playVoice } from "../services/api.js";
+import Avatar from "./Avatar.jsx";
 
 // Renders a fenced code block with a syntax-highlighted-ish monospace box
 // and a "Copy" button. react-markdown gives us <code> inside <pre> for
@@ -72,7 +74,11 @@ export default function MessageBubble({ role, content, image, character, languag
 
   return (
     <div className={`bubble-row ${isUser ? "user" : "character"}`}>
-      {!isUser && <div className="bubble-mini-avatar">{character.avatar_emoji}</div>}
+      {!isUser && (
+        <div className="bubble-mini-avatar">
+          <Avatar url={character.avatar_url} emoji={character.avatar_emoji} size={32} />
+        </div>
+      )}
       <div className="bubble-col">
         <div className="bubble">
           {image && <img src={image} alt="Shown to character" className="shared-image-preview" />}
@@ -96,7 +102,12 @@ export default function MessageBubble({ role, content, image, character, languag
         {!isUser && (
           <div className="bubble-meta">
             <button className="listen-btn" onClick={handleListen} disabled={loadingAudio}>
-              {loadingAudio ? "Conjuring voice…" : "🔊 Listen"}
+              {loadingAudio ? (
+                <Loader2 size={14} className="spin-icon" />
+              ) : (
+                <Volume2 size={14} strokeWidth={2} />
+              )}
+              {loadingAudio ? "Conjuring voice…" : "Listen"}
             </button>
             {error && <span className="bubble-error">{error}</span>}
           </div>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { RefreshCw, Zap, ZapOff, X, Send } from "lucide-react";
 
 export default function CameraCaptureModal({ onCapture, onClose }) {
   const videoRef = useRef(null);
@@ -113,7 +114,9 @@ function handleSend() {
 
       {!capturedImage && (
         <div className="camera-controls">
-          <button className="camera-icon-btn" onClick={switchCamera} title="Switch camera">🔄</button>
+          <button className="camera-icon-btn" onClick={switchCamera} title="Switch camera">
+            <RefreshCw size={18} strokeWidth={2} />
+          </button>
           <button className="camera-capture-btn" onClick={handleCapture} disabled={!!error} title="Capture">
             <span className="camera-capture-ring" />
           </button>
@@ -124,11 +127,13 @@ function handleSend() {
             style={!torchSupported ? { opacity: 0.3 } : undefined}
             title={torchSupported ? "Toggle flash" : "Flash not supported on this device"}
           >
-            {torchOn ? "⚡" : "🔦"}
+            {torchOn ? <Zap size={18} strokeWidth={2} /> : <ZapOff size={18} strokeWidth={2} />}
           </button>
         </div>
       )}
-      <button className="camera-close-btn" onClick={handleClose}>✕</button>
+      <button className="camera-close-btn" onClick={handleClose} aria-label="Close camera">
+        <X size={18} strokeWidth={2} />
+      </button>
     </div>
   </div>
 );

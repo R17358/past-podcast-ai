@@ -1,23 +1,28 @@
 import { useEffect, useState } from "react";
+import { Menu, TriangleAlert } from "lucide-react";
 import CharacterGallery from "./components/CharacterGallery.jsx";
 import ChatWindow from "./components/ChatWindow.jsx";
 import AddCharacterModal from "./components/AddCharacterModal.jsx";
 import AuthModal from "./components/AuthModal.jsx";
+import EditProfileModal from "./components/EditProfileModal.jsx";
+import EditCharacterModal from "./components/EditCharacterModal.jsx";
 import LanguageSelector, { FALLBACK_LANGUAGES } from "./components/LanguageSelector.jsx";
 import { fetchCharacters, fetchMe, getToken, logout } from "./services/api.js";
 import "./styles/App.css";
 
-// One id per browser tab/session — keeps each guest visitor's conversation
-// memory separate. Logged-in users' memory follows their account instead
-// (see backend/app/services/memory_service.py), this id just becomes unused for them.
+// One id per browser tab/session — used for pre-login guest polish (e.g.
+// character list loads instantly behind the auth gate) even though every
+// actual conversation now belongs to a signed-in account.
 const SESSION_ID = crypto.randomUUID();
 
 export default function App() {
   const [characters, setCharacters] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [editingCharacter, setEditingCharacter] = useState(null);
+  const [showEditProfile, setShowEditProfile] = useState(false);
   const [user, setUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false); // becomes true once we know whether a saved session is valid
   const [loadError, setLoadError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [language, setLanguage] = useState(
@@ -36,11 +41,21 @@ export default function App() {
       })
       .catch(() => setLoadError("Could not reach the backend. Is it running on the configured URL?"));
 
-    // Restore a logged-in session on refresh, if a token is already saved.
+    // Login is mandatory — the app-shell below only renders once `user` is
+    // set. Restore a saved session if the token is still valid; otherwise
+    // fall through to the sign-in gate.
     if (getToken()) {
       fetchMe()
-        .then(setUser)
-        .catch(() => logout()); // stale/expired token — fall back to guest silently
+        .then((u) => {
+          setUser(u);
+          setAuthChecked(true);
+        })
+        .catch(() => {
+          logout(); // stale/expired token
+          setAuthChecked(true);
+        });
+    } else {
+      setAuthChecked(true);
     }
   }, []);
 
@@ -54,6 +69,11 @@ export default function App() {
     setShowAddModal(false);
   }
 
+  function handleCharacterUpdated(updated) {
+    setCharacters((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+    setEditingCharacter(null);
+  }
+
   function handleSelect(c) {
     setActiveId(c.id);
     setSidebarOpen(false);
@@ -61,12 +81,26 @@ export default function App() {
 
   function handleAuthed(loggedInUser) {
     setUser(loggedInUser);
-    setShowAuthModal(false);
+  }
+
+  function handleProfileUpdated(updatedUser) {
+    setUser(updatedUser);
+    setShowEditProfile(false);
   }
 
   function handleLogout() {
     logout();
     setUser(null);
+  }
+
+  // Not signed in yet — show only the sign-in gate (no character list, no
+  // chat, nothing else usable) until sign-in succeeds. This is what makes
+  // login/signup mandatory: the rest of the UI simply never mounts.
+  if (!authChecked) {
+    return <div className="auth-boot-screen" aria-hidden="true" />;
+  }
+  if (!user) {
+    return <AuthModal mandatory onAuthed={handleAuthed} />;
   }
 
   return (
@@ -77,9 +111,7 @@ export default function App() {
           aria-label="Toggle character list"
           onClick={() => setSidebarOpen((v) => !v)}
         >
-          <span />
-          <span />
-          <span />
+          <Menu size={20} strokeWidth={2} />
         </button>
         <p className="mobile-topbar-title">
           Hall of <em>Sages</em>
@@ -97,10 +129,11 @@ export default function App() {
           setShowAddModal(true);
           setSidebarOpen(false);
         }}
+        onEditCharacter={setEditingCharacter}
         language={language}
         onLanguageChange={setLanguage}
         user={user}
-        onAuthClick={() => setShowAuthModal(true)}
+        onEditProfile={() => setShowEditProfile(true)}
         onLogout={handleLogout}
       />
 
@@ -108,7 +141,7 @@ export default function App() {
         <section className="chat-panel">
           <div className="messages">
             <div className="empty-state">
-              <div className="medallion">⚠️</div>
+              <div className="medallion medallion-lg"><TriangleAlert size={28} strokeWidth={1.75} /></div>
               <h2>Backend unreachable</h2>
               <p>{loadError}</p>
             </div>
@@ -120,6 +153,7 @@ export default function App() {
           sessionId={SESSION_ID}
           language={language}
           speechLocale={speechLocale}
+          onEditCharacter={setEditingCharacter}
         />
       )}
 
@@ -127,8 +161,20 @@ export default function App() {
         <AddCharacterModal onClose={() => setShowAddModal(false)} onCreated={handleCreated} />
       )}
 
-      {showAuthModal && (
-        <AuthModal onClose={() => setShowAuthModal(false)} onAuthed={handleAuthed} />
+      {editingCharacter && (
+        <EditCharacterModal
+          character={editingCharacter}
+          onClose={() => setEditingCharacter(null)}
+          onUpdated={handleCharacterUpdated}
+        />
+      )}
+
+      {showEditProfile && (
+        <EditProfileModal
+          user={user}
+          onClose={() => setShowEditProfile(false)}
+          onUpdated={handleProfileUpdated}
+        />
       )}
     </div>
   );

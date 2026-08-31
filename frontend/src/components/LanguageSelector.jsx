@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Globe } from "lucide-react";
 import { fetchLanguages } from "../services/api.js";
 
 export const FALLBACK_LANGUAGES = [
@@ -20,7 +21,7 @@ export default function LanguageSelector({ value, onChange, compact = false }) {
 
   return (
     <label className={`lang-select ${compact ? "compact" : ""}`} title="Conversation language">
-      <span className="lang-select-icon">🌐</span>
+      <span className="lang-select-icon"><Globe size={14} strokeWidth={2} /></span>
       <select value={value} onChange={(e) => onChange(e.target.value)} aria-label="Language">
         {languages.map((l) => (
           <option key={l.code} value={l.code}>

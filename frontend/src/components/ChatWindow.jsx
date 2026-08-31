@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { Mic, MicOff, MessageCircle, Phone, PhoneOff, Volume2, VolumeX, Camera, Landmark, Send, AlertTriangle, Pencil } from "lucide-react";
 import MessageBubble from "./MessageBubble.jsx";
 import { sendMessage, resetChat, fetchVoice, fetchVision, stopCurrentVoice, playVoice } from "../services/api.js";
 import CameraCaptureModal from "./CameraCaptureModal.jsx";
+import Avatar from "./Avatar.jsx";
 
 const SpeechRecognitionAPI =
   typeof window !== "undefined" ? window.SpeechRecognition || window.webkitSpeechRecognition : null;
@@ -85,7 +87,7 @@ function mergeFinalSegment(existing, incoming) {
   return `${e} ${inc}`.trim(); // genuinely new content — append
 }
 
-export default function ChatWindow({ character, sessionId, language = "en", speechLocale = "en-US" }) {
+export default function ChatWindow({ character, sessionId, language = "en", speechLocale = "en-US", onEditCharacter }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -135,6 +137,17 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
     callStateRef.current = callState;
   }, [callState]);
 
+  // Sets both the React state (for render) AND the ref (readable
+  // synchronously in the same tick) together. This matters because
+  // startListening()'s "don't listen while speaking/thinking" guard reads
+  // callStateRef — if only setCallState() were called, that guard would
+  // still see the OLD value until the next render, which is exactly what
+  // let the mic stay stuck open/closed at the wrong moments before.
+  function updateCallState(next) {
+    callStateRef.current = next;
+    setCallState(next);
+  }
+
   // Reset conversation + stop any live call whenever the chosen character changes
   useEffect(() => {
     setMessages([]);
@@ -156,7 +169,7 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
       <section className="chat-panel">
         <div className="messages">
           <div className="empty-state">
-            <div className="medallion">🏛️</div>
+            <div className="medallion medallion-lg"><Landmark size={28} strokeWidth={1.75} /></div>
             <h2>Choose a sage to begin</h2>
             <p>Pick a character from the Hall to start a conversation.</p>
           </div>
@@ -185,7 +198,7 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
     if (audioRef.current) {
       audioRef.current.pause();
     }
-    setCallState("idle");
+    updateCallState("idle");
     setLiveCaption("");
   }
 
@@ -210,7 +223,7 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
     finalTranscriptRef.current = "";
 
     recognition.onstart = () => {
-      setCallState("listening");
+      updateCallState("listening");
     };
 
     recognition.onresult = (event) => {
@@ -269,7 +282,7 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
 
   async function handleVoiceTurn(text) {
     setLiveCaption("");
-    setCallState("thinking"); // mic is now fully closed — see the "thinking"/"speaking" guard in startListening()
+    updateCallState("thinking"); // mic is now fully closed — see the "thinking"/"speaking" guard in startListening()
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     try {
       const data = await sendMessage({ characterId: character.id, sessionId, message: text, language });
@@ -280,21 +293,37 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
         ...prev,
         { role: "assistant", content: "(The connection to this era was lost. Please try again.)" },
       ]);
+      // speak() always resets state back to idle/listening itself (see below),
+      // but if we skipped speak() entirely because sendMessage threw, nothing
+      // else has reset callState yet — do it here so the mic isn't stuck.
+      if (callStateRef.current === "thinking") updateCallState("idle");
     }
     if (voiceModeRef.current) startListening(); // safe even if a manual interrupt already restarted it — startListening() no-ops if a session is already live
   }
 
+  // FIX (bug #1 — "call gets stuck after the first reply"): this used to
+  // only ever SET callState to "speaking" and never reset it back on a
+  // normal (non-interrupted) finish. startListening()'s guard checks
+  // callState and refuses to listen while it's "speaking" — so once the
+  // very first reply finished playing, the state stayed "speaking" forever
+  // and the mic never reopened on its own. Now every exit path (normal
+  // finish, browser-voice fallback finish, or genuine interrupt) explicitly
+  // returns callState to "idle" before this function returns.
   async function speak(text) {
     if (speakerMutedRef.current) return; // speaker muted — don't fetch or play any audio at all
-    setCallState("speaking");
+    updateCallState("speaking");
     setVoiceError("");
     const clean = cleanForSpeech(text);
+    let interrupted = false;
     try {
       const url = await fetchVoice({ characterId: character.id, text: clean, language });
       const audio = audioRef.current;
       if (!audio) throw new Error("no audio element");
       await new Promise((resolve, reject) => {
-        speakResolveRef.current = resolve; // lets interruptAndListen() below settle this cleanly on manual interrupt
+        speakResolveRef.current = () => {
+          interrupted = true; // a manual interrupt already moved callState off "speaking" itself
+          resolve();
+        };
         audio.onended = resolve;
         audio.onerror = () => reject(new Error("audio element playback error"));
         playVoice(url, audio).catch(reject);
@@ -306,24 +335,51 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
       }
     } finally {
       speakResolveRef.current = null;
+      // Only reset here if nothing else (an interrupt) already did — avoids
+      // stomping on a state change that happened while we were mid-await.
+      if (!interrupted && callStateRef.current === "speaking") {
+        updateCallState("idle");
+      }
     }
   }
 
-  // The ONLY way the AI gets interrupted: an explicit tap (mic button or the
-  // orb) while it's speaking. Immediately stops its voice and opens the mic
-  // for your next turn — deliberate, not voice-activated, so there's no echo
-  // to misread and no random cutting-in/silence-mid-conversation.
-  function interruptAndListen() {
+  // Stops whatever audio is currently playing/queued, without touching mic
+  // state or restarting listening — the shared building block for both
+  // "interrupt to talk" (mic tap) and "mute speaker mid-reply" below, which
+  // need different follow-up behavior.
+  function stopSpeakingAudio() {
     stopCurrentVoice();
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
     }
     speakResolveRef.current?.(); // let the pending speak() promise resolve instead of hanging forever
+  }
+
+  // The ONLY way the AI gets interrupted-to-talk: an explicit tap (mic
+  // button or the orb) while it's actually speaking. Stops its voice,
+  // force-unmutes the mic (you're actively trying to talk, so any earlier
+  // mute shouldn't block that), and opens the mic for your next turn.
+  function interruptAndListen() {
+    stopSpeakingAudio();
     setMicMuted(false);
     micMutedRef.current = false;
-    setCallState("idle");
+    updateCallState("idle");
     startListening();
+  }
+
+  // FIX (bug #2 — "speaker mute forgets my mic-mute setting"): muting the
+  // speaker mid-reply used to call interruptAndListen(), which force-
+  // unmutes the mic every time — so muting the speaker would silently
+  // un-mute a mic you'd deliberately muted. This stops the audio the same
+  // way, but leaves mic-mute exactly as you left it, and only reopens the
+  // mic if it wasn't muted to begin with.
+  function stopSpeakingForMute() {
+    stopSpeakingAudio();
+    updateCallState("idle");
+    if (!micMutedRef.current) {
+      startListening();
+    }
   }
 
   function toggleVoiceMode() {
@@ -347,10 +403,22 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
     }
   }
 
+  // FIX (bug #3 — "muting mic while thinking causes overlapping replies"):
+  // this used to treat ANY mic tap during "speaking" OR "thinking" as a
+  // full interrupt, which immediately reopened the mic and started a new
+  // listening session — while the previous reply was still being generated
+  // in the background. When that old reply finally came back, it could
+  // speak/append on top of the new turn. There's nothing actually playing
+  // to interrupt while "thinking" (the AI hasn't spoken yet), so a mic tap
+  // in that state now just toggles mute like normal — no new listening
+  // session starts until the pending reply finishes and hands control back
+  // (see the "if (voiceModeRef.current) startListening()" at the end of
+  // handleVoiceTurn, which already respects the fresh mute state).
   function toggleMic() {
-    // Tapping the mic while the AI is talking is how you interrupt it —
-    // see interruptAndListen()'s comment above.
-    if (callStateRef.current === "speaking" || callStateRef.current === "thinking") {
+    // Only treat this as "interrupt and start talking" when the AI is
+    // actually mid-speech — tapping mic while merely "thinking" is just a
+    // normal mute toggle now (see comment above).
+    if (callStateRef.current === "speaking") {
       interruptAndListen();
       return;
     }
@@ -366,8 +434,8 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
       }
       recognitionRef.current = null;
       setLiveCaption("");
-      setCallState("idle");
-    } else if (!cameraOpenRef.current) {
+      if (callStateRef.current === "listening") updateCallState("idle");
+    } else if (!cameraOpenRef.current && callStateRef.current === "idle") {
       startListening();
     }
   }
@@ -378,9 +446,10 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
     speakerMutedRef.current = next;
     if (next) {
       // Muting mid-reply: cut off whatever's currently playing immediately,
-      // then open the mic for the next turn (same as a manual interrupt).
+      // then — unlike a manual interrupt — respect the existing mic-mute
+      // setting instead of forcing the mic back on (fix #2, see above).
       if (callStateRef.current === "speaking") {
-        interruptAndListen();
+        stopSpeakingForMute();
       }
     }
   }
@@ -421,6 +490,7 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
     if (audioRef.current) {
       audioRef.current.pause();
     }
+    updateCallState("idle");
     setCameraModalOpen(true);
   }
 
@@ -469,32 +539,55 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
       <audio ref={audioRef} preload="auto" />
 
       <header className="chat-header">
-        <div className="medallion">{character.avatar_emoji}</div>
+        <Avatar url={character.avatar_url} emoji={character.avatar_emoji} size={44} className="medallion" />
         <div className="chat-header-info">
           <p className="chat-header-name">{character.name}</p>
           <p className="chat-header-title">{character.title}{character.era ? ` · ${character.era}` : ""}</p>
         </div>
         <div className="chat-header-actions">
+          {onEditCharacter && (
+            <button className="icon-btn" onClick={() => onEditCharacter(character)} title={`Edit ${character.name}`} aria-label="Edit character">
+              <Pencil size={16} strokeWidth={2} />
+            </button>
+          )}
           <button className="ghost-btn" onClick={handleClear}>Start over</button>
-          <button
-            className={`voice-toggle ${voiceMode ? "on" : ""}`}
-            role="switch"
-            aria-checked={voiceMode}
-            onClick={toggleVoiceMode}
-            title={voiceMode ? "End live voice call" : "Start live voice call"}
-          >
-            <span className="voice-toggle-icon">{voiceMode ? "🎙️" : "💬"}</span>
-            <span className="voice-toggle-track">
-              <span className="voice-toggle-thumb" />
-            </span>
-          </button>
+
+          {/* Segmented slide control — replaces the old on/off toggle. The
+              highlight pill slides between "Chat" and "Call" via a CSS
+              transform transition (see .mode-switch-highlight in App.css),
+              rather than the content just instantly swapping. */}
+          <div className="mode-switch" role="tablist" aria-label="Conversation mode">
+            <span className={`mode-switch-highlight ${voiceMode ? "is-call" : "is-chat"}`} aria-hidden="true" />
+            <button
+              role="tab"
+              aria-selected={!voiceMode}
+              className={`mode-switch-btn ${!voiceMode ? "active" : ""}`}
+              onClick={() => voiceMode && toggleVoiceMode()}
+            >
+              <MessageCircle size={14} strokeWidth={2} />
+              Chat
+            </button>
+            <button
+              role="tab"
+              aria-selected={voiceMode}
+              className={`mode-switch-btn ${voiceMode ? "active" : ""}`}
+              onClick={() => !voiceMode && toggleVoiceMode()}
+            >
+              <Phone size={14} strokeWidth={2} />
+              Call
+            </button>
+          </div>
         </div>
       </header>
 
-      {voiceError && <div className="voice-error-banner">⚠️ {voiceError}</div>}
+      {voiceError && (
+        <div className="voice-error-banner">
+          <AlertTriangle size={15} strokeWidth={2} /> {voiceError}
+        </div>
+      )}
 
       {voiceMode ? (
-        <div className="call-view">
+        <div className="call-view view-anim-in" key="call-view">
           <div
             className={`call-orb call-orb--${callState}`}
             onClick={() => {
@@ -504,7 +597,10 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
           >
             <span className="call-orb-ring call-orb-ring--1" />
             <span className="call-orb-ring call-orb-ring--2" />
-            <span className="call-orb-avatar">{character.avatar_emoji}</span>
+            <span className="call-orb-bars" aria-hidden="true">
+              <span /><span /><span /><span /><span />
+            </span>
+            <Avatar url={character.avatar_url} emoji={character.avatar_emoji} size={72} className="call-orb-avatar" />
           </div>
           <p className="call-status">{statusText}</p>
           {liveCaption && <p className="call-caption">"{liveCaption}"</p>}
@@ -520,7 +616,7 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
 
           <div className="call-actions">
             <button className="ghost-btn" onClick={handleCameraOpen} disabled={cameraBusy} title="Show something via camera">
-              {cameraBusy ? "📷…" : "📷 Show"}
+              <Camera size={15} strokeWidth={2} /> Show
             </button>
             <button
               className={`icon-toggle-btn ${micMuted ? "muted" : ""}`}
@@ -533,24 +629,26 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
                   : "Mute microphone"
               }
             >
-              {callState === "speaking" ? "🎙️" : micMuted ? "🎙️🚫" : "🎙️"}
+              {callState !== "speaking" && micMuted ? <MicOff size={18} strokeWidth={2} /> : <Mic size={18} strokeWidth={2} />}
             </button>
             <button
               className={`icon-toggle-btn ${speakerMuted ? "muted" : ""}`}
               onClick={toggleSpeaker}
               title={speakerMuted ? "Unmute speaker" : "Mute speaker"}
             >
-              {speakerMuted ? "🔇" : "🔊"}
+              {speakerMuted ? <VolumeX size={18} strokeWidth={2} /> : <Volume2 size={18} strokeWidth={2} />}
             </button>
-            <button className="hang-up-btn" onClick={toggleVoiceMode}>End call</button>
+            <button className="hang-up-btn" onClick={toggleVoiceMode}>
+              <PhoneOff size={15} strokeWidth={2} /> End call
+            </button>
           </div>
         </div>
       ) : (
-        <>
+        <div className="chat-body view-anim-in" key="chat-view">
           <div className="messages" ref={scrollRef}>
             {messages.length === 0 && (
               <div className="empty-state">
-                <div className="medallion">{character.avatar_emoji}</div>
+                <Avatar url={character.avatar_url} emoji={character.avatar_emoji} size={64} className="medallion medallion-lg" />
                 <h2>{character.name} is listening</h2>
                 <p>{character.description}</p>
               </div>
@@ -560,7 +658,9 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
             ))}
             {isTyping && (
               <div className="bubble-row character">
-                <div className="bubble-mini-avatar">{character.avatar_emoji}</div>
+                <div className="bubble-mini-avatar">
+                  <Avatar url={character.avatar_url} emoji={character.avatar_emoji} size={32} />
+                </div>
                 <div className="bubble">
                   <span className="typing-dots"><span></span><span></span><span></span></span>
                 </div>
@@ -570,7 +670,7 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
 
           <div className="composer">
             <button className="ghost-btn camera-btn" onClick={handleCameraOpen} disabled={cameraBusy} title="Show something via camera">
-              {cameraBusy ? "📷…" : "📷"}
+              <Camera size={17} strokeWidth={2} />
             </button>
             <input
               value={input}
@@ -578,11 +678,11 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
               placeholder={`Ask ${character.name} something…`}
             />
-            <button className="send-btn" onClick={handleSend} disabled={!input.trim() || isTyping}>
-              ➤
+            <button className="send-btn" onClick={handleSend} disabled={!input.trim() || isTyping} aria-label="Send">
+              <Send size={16} strokeWidth={2} />
             </button>
           </div>
-        </>
+        </div>
       )}
       {showCameraModal && (
         <CameraCaptureModal onCapture={handleCameraCapture} onClose={() => setCameraModalOpen(false)} />
