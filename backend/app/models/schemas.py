@@ -72,6 +72,8 @@ class ChatRequest(BaseModel):
     session_id: str
     message: str
     language: Optional[str] = "en"   # BCP-47-ish code: en, hi, mr, ...
+    response_length: Optional[str] = "normal"   # "short" | "normal" | "detailed"
+    tone: Optional[str] = "normal"               # "normal" | "professional" | "funny" | "friendly"
 
 
 class ChatResponse(BaseModel):

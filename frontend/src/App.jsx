@@ -10,6 +10,7 @@ import UnlockModal from "./components/UnlockModal.jsx";
 import SubscribeModal from "./components/SubscribeModal.jsx";
 import QuizListModal from "./components/QuizListModal.jsx";
 import AdminQuizModal from "./components/AdminQuizModal.jsx";
+import OnboardingTour, { hasSeenTour } from "./components/OnboardingTour.jsx";
 import LanguageSelector, { FALLBACK_LANGUAGES } from "./components/LanguageSelector.jsx";
 import { fetchCategories, fetchCharacters, fetchMe, getToken, logout } from "./services/api.js";
 import "./styles/App.css";
@@ -32,6 +33,7 @@ export default function App() {
   const [showQuizzes, setShowQuizzes] = useState(false);
   const [showAdminQuizzes, setShowAdminQuizzes] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const [showTour, setShowTour] = useState(false);
   const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false); // becomes true once we know whether a saved session is valid
   const [loadError, setLoadError] = useState("");
@@ -76,6 +78,12 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     fetchCategories().then(setCategories).catch(() => {});
+  }, [user]);
+
+  // First-time onboarding tour — shows once per browser (localStorage flag),
+  // right after sign-in, and can be reopened anytime from the "?" icon.
+  useEffect(() => {
+    if (user && !hasSeenTour()) setShowTour(true);
   }, [user]);
 
   const activeCharacter = characters.find((c) => c.id === activeId) || null;
@@ -191,6 +199,7 @@ export default function App() {
         categories={categories}
         onOpenQuizzes={() => setShowQuizzes(true)}
         onOpenAdminQuizzes={() => setShowAdminQuizzes(true)}
+        onOpenTour={() => setShowTour(true)}
       />
 
       {loadError ? (
@@ -263,6 +272,8 @@ export default function App() {
           onUpdated={handleProfileUpdated}
         />
       )}
+
+      {showTour && <OnboardingTour isAdmin={isAdmin} onClose={() => setShowTour(false)} />}
     </div>
   );
 }

@@ -32,6 +32,8 @@ def send_message(payload: ChatRequest, user_id: Optional[str] = Depends(get_opti
             history=history,
             user_message=payload.message,
             language=payload.language or "en",
+            response_length=payload.response_length or "normal",
+            tone=payload.tone or "normal",
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"LLM error: {exc}")

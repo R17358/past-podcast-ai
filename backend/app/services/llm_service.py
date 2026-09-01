@@ -51,9 +51,33 @@ def _language_instruction(language: str) -> str:
     )
 
 
+# Per-conversation reply customization — set per character, per user, from the
+# chat header's style panel. "normal" for both is a no-op (the character's
+# natural voice, already covered by LIVE_CHARACTER_GUIDELINES above), so we
+# only add an instruction when the user picked something else.
+_LENGTH_INSTRUCTIONS = {
+    "short": "\nFor this reply specifically, keep it especially brief — 1 to 2 short sentences, no more, even if that means leaving detail out.",
+    "detailed": "\nFor this reply specifically, go into real depth — thorough explanation, examples, and nuance are welcome, even if it runs several paragraphs.",
+}
+
+_TONE_INSTRUCTIONS = {
+    "professional": "\nFor this reply specifically, use a more formal, professional register — precise language, minimal slang — while staying true to who you are.",
+    "funny": "\nFor this reply specifically, lean into humor — wit, playful asides, a joke where it fits naturally — while staying true to who you are.",
+    "friendly": "\nFor this reply specifically, use an especially warm, casual, friendly register — like talking to a close friend — while staying true to who you are.",
+}
+
+
+def _style_instruction(response_length: str, tone: str) -> str:
+    return _LENGTH_INSTRUCTIONS.get(response_length, "") + _TONE_INSTRUCTIONS.get(tone, "")
+
+
 def chat_with_character(persona_prompt: str, summary: str, history: List[ChatMessage],
-                         user_message: str, language: str = "en") -> str:
-    system_content = persona_prompt + "\n" + LIVE_CHARACTER_GUIDELINES + _language_instruction(language)
+                         user_message: str, language: str = "en",
+                         response_length: str = "normal", tone: str = "normal") -> str:
+    system_content = (
+        persona_prompt + "\n" + LIVE_CHARACTER_GUIDELINES
+        + _language_instruction(language) + _style_instruction(response_length, tone)
+    )
     if summary:
         system_content += (
             "\n\nHere is a summary of the earlier part of this same conversation "

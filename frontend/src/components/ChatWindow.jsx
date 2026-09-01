@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Mic, MicOff, MessageCircle, Phone, PhoneOff, Volume2, VolumeX, Camera, Landmark, Send, AlertTriangle, Pencil, Crown, LockKeyhole } from "lucide-react";
+import StyleSettingsButton from "./StyleSettingsButton.jsx";
 import MessageBubble from "./MessageBubble.jsx";
 import { sendMessage, resetChat, fetchVoice, fetchVision, stopCurrentVoice, playVoice } from "../services/api.js";
 import CameraCaptureModal from "./CameraCaptureModal.jsx";
@@ -107,6 +108,26 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
   const [showCameraModal, setShowCameraModal] = useState(false);
   const [micMuted, setMicMuted] = useState(false);
   const [speakerMuted, setSpeakerMuted] = useState(false);
+
+  // ---- Reply style (length + tone) — per character, remembered on this device ----
+  const [replyStyle, setReplyStyle] = useState({ length: "normal", tone: "normal" });
+  const replyStyleRef = useRef(replyStyle);
+  replyStyleRef.current = replyStyle;
+
+  useEffect(() => {
+    if (!character) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(`hos-style:${character.id}`) || "null");
+      setReplyStyle(saved || { length: "normal", tone: "normal" });
+    } catch {
+      setReplyStyle({ length: "normal", tone: "normal" });
+    }
+  }, [character?.id]);
+
+  function handleStyleChange(next) {
+    setReplyStyle(next);
+    if (character) localStorage.setItem(`hos-style:${character.id}`, JSON.stringify(next));
+  }
 
   const scrollRef = useRef(null);
   const callScrollRef = useRef(null);
@@ -309,7 +330,7 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
     updateCallState("thinking"); // mic is now fully closed — see the "thinking"/"speaking" guard in startListening()
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     try {
-      const data = await sendMessage({ characterId: character.id, sessionId, message: text, language });
+      const data = await sendMessage({ characterId: character.id, sessionId, message: text, language, responseLength: replyStyleRef.current.length, tone: replyStyleRef.current.tone });
       setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
       await speak(data.reply); // wait for it to finish (or be manually interrupted) before reopening the mic
     } catch {
@@ -485,7 +506,7 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setIsTyping(true);
     try {
-      const data = await sendMessage({ characterId: character.id, sessionId, message: text, language });
+      const data = await sendMessage({ characterId: character.id, sessionId, message: text, language, responseLength: replyStyleRef.current.length, tone: replyStyleRef.current.tone });
       setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
     } catch (err) {
       setMessages((prev) => [
@@ -569,6 +590,11 @@ export default function ChatWindow({ character, sessionId, language = "en", spee
           <p className="chat-header-title">{character.title}{character.era ? ` · ${character.era}` : ""}</p>
         </div>
         <div className="chat-header-actions">
+          <StyleSettingsButton
+            length={replyStyle.length}
+            tone={replyStyle.tone}
+            onChange={handleStyleChange}
+          />
           {onEditCharacter && (
             <button className="icon-btn" onClick={() => onEditCharacter(character)} title={`Edit ${character.name}`} aria-label="Edit character">
               <Pencil size={16} strokeWidth={2} />

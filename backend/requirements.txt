@@ -14,6 +14,11 @@ pyjwt==2.9.0
 python-multipart==0.0.12
 google-auth==2.35.0
 cloudinary==1.41.0
-
+# razorpay==1.4.2 imports pkg_resources unconditionally at module load time —
+# pkg_resources ships inside setuptools, which recent Python/venv setups no
+# longer install by default. Without this line, `import razorpay` itself
+# fails with "No module named 'pkg_resources'" even before any Razorpay
+# call is made. Pinned <81 because setuptools 81+ removed pkg_resources
+# entirely (it's deprecated upstream, but razorpay 1.4.2 still needs it).
 setuptools<81
 razorpay==1.4.2

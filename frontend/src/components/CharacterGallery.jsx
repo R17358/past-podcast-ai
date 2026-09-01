@@ -1,4 +1,4 @@
-import { Coins, ListChecks, LogOut, Pencil, Plus, Search, Settings2 } from "lucide-react";
+import { Coins, HelpCircle, ListChecks, LogOut, Pencil, Plus, Search, Settings2 } from "lucide-react";
 import CharacterCard from "./CharacterCard.jsx";
 import LanguageSelector from "./LanguageSelector.jsx";
 import Avatar from "./Avatar.jsx";
@@ -23,11 +23,17 @@ export default function CharacterGallery({
   categories,
   onOpenQuizzes,
   onOpenAdminQuizzes,
+  onOpenTour,
 }) {
   return (
     <aside className="hall">
       <div className="hall-head">
-        <p className="hall-eyebrow">Hall of Sages</p>
+        <div className="hall-eyebrow-row">
+          <p className="hall-eyebrow">Hall of Sages</p>
+          <button className="icon-btn tour-help-btn" onClick={onOpenTour} title="Take the tour" aria-label="Take the tour">
+            <HelpCircle size={15} strokeWidth={2} />
+          </button>
+        </div>
         <h1 className="hall-title">
           Talk to <em>History</em>
         </h1>

@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE = import.meta.env.VITE_API_URL || "https://past-podcast-ai.onrender.com";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const TOKEN_KEY = "hos-token";
 
 const api = axios.create({ baseURL: API_BASE });
@@ -205,12 +205,14 @@ export async function fetchLanguages() {
 
 // --- Chat ---
 
-export async function sendMessage({ characterId, sessionId, message, language }) {
+export async function sendMessage({ characterId, sessionId, message, language, responseLength, tone }) {
   const { data } = await api.post("/api/chat", {
     character_id: characterId,
     session_id: sessionId,
     message,
     language: language || "en",
+    response_length: responseLength || "normal",
+    tone: tone || "normal",
   });
   return data;
 }
